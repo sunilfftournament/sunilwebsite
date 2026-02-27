@@ -3,16 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sunil FF Pro - Secure Master</title>
+    <title>Sunil FF Pro - Master Cloud</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, doc, addDoc, setDoc, onSnapshot, updateDoc, serverTimestamp, deleteDoc, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // Firebase Configuration
+        // --- Firebase Config (Directly Integrated) ---
         const firebaseConfig = {
             apiKey: "AIzaSyDJie-ZFkaSjxAck7ohpegafgTyy6e-2AY",
             authDomain: "sunilesports-ff-4f4ad.firebaseapp.com",
@@ -23,58 +23,53 @@
             measurementId: "G-0R3ZZ1VNSF"
         };
 
-        const finalConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : firebaseConfig;
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'sunilesports-ff-4f4ad';
-        const initialToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-
-        const app = initializeApp(finalConfig);
+        const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
+        const appId = 'sunilesports-ff-4f4ad';
 
-        // State
+        // State Management
         let currentUser = null;
         let registrations = [];
+        // AAPKA PERMANENT SCANNER LINK (DIRECT PNG)
         let scannerUrl = "https://accessible-gold-euwxs5d623.edgeone.app/AccountQRCodeNsdl%20Payments%20Bank%20Limited%20-%206448_DARK_THEME.png";
         let entryFee = "50";
         let googleSheetUrl = ""; 
         
-        const adminPassword = "125991sunil";   
-        const settingsPassword = "73551109anil"; 
+        const dashboardPass = "125991sunil";   
+        const settingsPassSecret = "73551109anil"; 
 
-        let buildTapCount = 0;
-        let settingsTapCount = 0;
-        let buildTapTimer = null;
-        let settingsTapTimer = null;
-
-        let activeSettingType = null;
-        let activeDeleteId = null;
+        let bTaps = 0; let bTimer = null;
+        let sTaps = 0; let sTimer = null;
+        let activeAction = null;
+        let activeId = null;
 
         const getRegCol = () => collection(db, 'artifacts', appId, 'public', 'data', 'registrations');
         const getSettingsDoc = () => doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'config');
 
-        // Auth Logic (Rule 3)
-        async function initAuth() {
+        // Auth & Initial Data
+        async function startSystem() {
             try {
-                if (initialToken) { await signInWithCustomToken(auth, initialToken); } 
-                else { await signInAnonymously(auth); }
-            } catch (e) { console.error("Auth Fail:", e); }
+                await signInAnonymously(auth);
+            } catch (e) { showMessage("Auth Error!", "error"); }
         }
 
         onAuthStateChanged(auth, (user) => {
             currentUser = user;
-            if (user) {
-                loadData();
-                loadSettings();
+            if (user) { 
+                console.log("System Online");
+                loadData(); 
+                loadConfig(); 
             }
         });
 
-        function loadSettings() {
+        function loadConfig() {
             onSnapshot(getSettingsDoc(), (snap) => {
                 if (snap.exists()) {
-                    const data = snap.data();
-                    scannerUrl = data.scannerUrl || scannerUrl;
-                    entryFee = data.entryFee || entryFee;
-                    googleSheetUrl = data.googleSheetUrl || googleSheetUrl;
+                    const d = snap.data();
+                    scannerUrl = d.scannerUrl || scannerUrl;
+                    entryFee = d.entryFee || entryFee;
+                    googleSheetUrl = d.googleSheetUrl || googleSheetUrl;
                     
                     document.getElementById('mainScanner').src = scannerUrl;
                     document.getElementById('displayFee').innerText = "₹" + entryFee;
@@ -86,21 +81,19 @@
         function loadData() {
             onSnapshot(getRegCol(), (snap) => {
                 registrations = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-                renderAdminTable();
-                updateStats();
+                renderAdmin();
+                document.getElementById('totalCount').innerText = registrations.length;
+                document.getElementById('confCount').innerText = registrations.filter(r => r.status === 'Confirmed').length;
+            }, (err) => {
+                if(err.code === 'permission-denied') showMessage("Firestore Rules Check Karein!", "error");
             });
         }
 
-        function updateStats() {
-            document.getElementById('totalCount').innerText = registrations.length;
-            document.getElementById('confCount').innerText = registrations.filter(r => r.status === 'Confirmed').length;
-        }
-
+        // Registration Submission
         window.submitRegistration = async (e) => {
             e.preventDefault();
             const btn = document.getElementById('submitBtn');
-            btn.disabled = true;
-            btn.innerText = "Registering...";
+            btn.disabled = true; btn.innerText = "Processing...";
 
             const data = {
                 playerName: document.getElementById('playerName').value,
@@ -110,216 +103,174 @@
                 teamName: document.getElementById('teamName').value,
                 payName: document.getElementById('payName').value, 
                 utr: document.getElementById('utr').value,
-                status: 'Pending',
-                remark: '',
-                syncedToSheet: false,
+                status: 'Pending', 
+                syncedToSheet: false, 
                 timestamp: serverTimestamp()
             };
 
-            const fileInput = document.getElementById('screenshot');
-            if (fileInput.files[0]) {
-                const reader = new FileReader();
-                reader.onload = async (ev) => {
-                    const img = new Image();
-                    img.src = ev.target.result;
-                    img.onload = async () => {
-                        const canvas = document.createElement('canvas');
-                        const MAX_WIDTH = 600;
-                        canvas.width = MAX_WIDTH;
-                        canvas.height = img.height * (MAX_WIDTH / img.width);
-                        img.getContext ? null : canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-                        data.screenshot = canvas.toDataURL('image/jpeg', 0.6);
-                        await finalizeSave(data);
-                    };
-                    // Fallback for simple systems
-                    data.screenshot = ev.target.result;
-                    await finalizeSave(data);
-                };
-                reader.readAsDataURL(fileInput.files[0]);
-            } else { await finalizeSave(data); }
+            const file = document.getElementById('screenshot').files[0];
+            const reader = new FileReader();
+            reader.onload = async (ev) => {
+                data.screenshot = ev.target.result; // Direct save base64
+                try {
+                    await addDoc(getRegCol(), data);
+                    showMessage("Registration Successful! Verify ka intezar karein.", "success");
+                    document.getElementById('regForm').reset();
+                } catch (e) { showMessage("Permission Denied!", "error"); }
+                finally { btn.disabled = false; btn.innerText = "Register Now"; }
+            };
+            reader.readAsDataURL(file);
         };
-
-        async function finalizeSave(data) {
-            try {
-                await addDoc(getRegCol(), data);
-                showMessage("Success! Details saved online.", "success");
-                document.getElementById('regForm').reset();
-            } catch (e) { showMessage("Error saving data!", "error"); }
-            finally {
-                document.getElementById('submitBtn').disabled = false;
-                document.getElementById('submitBtn').innerText = "Register Now";
-            }
-        }
 
         window.handleStatus = async (id, status) => {
             try {
-                const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'registrations', id);
-                const docSnap = await getDoc(docRef);
-                const playerData = docSnap.data();
+                const ref = doc(db, 'artifacts', appId, 'public', 'data', 'registrations', id);
+                const snap = await getDoc(ref);
+                const p = snap.data();
 
-                if (status === 'Confirmed' && !playerData.syncedToSheet && googleSheetUrl) {
-                    await fetch(googleSheetUrl, {
-                        method: 'POST', mode: 'no-cors', cache: 'no-cache',
-                        headers: { 'Content-Type': 'application/json' },
+                if (status === 'Confirmed' && !p.syncedToSheet && googleSheetUrl) {
+                    await fetch(googleSheetUrl, { 
+                        method: 'POST', 
+                        mode: 'no-cors', 
                         body: JSON.stringify({
-                            playerName: playerData.playerName, gameUid: playerData.gameUid,
-                            whatsapp: playerData.whatsapp, village: playerData.village,
-                            teamName: playerData.teamName, payName: playerData.payName,
-                            utr: playerData.utr, status: 'Confirmed'
-                        })
+                            date: new Date().toLocaleDateString("en-IN"),
+                            time: new Date().toLocaleTimeString("en-IN"),
+                            playerName: p.playerName,
+                            gameUid: p.gameUid,
+                            whatsapp: p.whatsapp,
+                            utr: p.utr,
+                            village: p.village,
+                            teamName: p.teamName,
+                            status: 'Confirmed'
+                        }) 
                     });
-                    await updateDoc(docRef, { status: status, syncedToSheet: true });
-                    showMessage("Confirmed & Synced!", "success");
+                    await updateDoc(ref, { status, syncedToSheet: true });
+                    showMessage("Confirmed & Synced to Sheet!", "success");
                 } else {
-                    await updateDoc(docRef, { status: status });
-                    showMessage(`Status: ${status}`, "success");
+                    await updateDoc(ref, { status });
+                    showMessage("Status Updated!", "success");
                 }
-            } catch (e) { alert("Action Failed!"); }
+            } catch (e) { showMessage("Action Error!", "error"); }
         };
 
-        // --- NEW MODAL INPUT LOGIC ---
-        window.openInputModal = (type, id = null) => {
-            activeSettingType = type;
-            activeDeleteId = id;
-            const modal = document.getElementById('inputModal');
-            const title = document.getElementById('inputModalTitle');
-            const input = document.getElementById('modalInputValue');
-            
-            input.type = "text";
-            input.value = "";
-            
-            if (type === 'QR') { title.innerText = "Naya QR Link"; input.value = scannerUrl; }
-            else if (type === 'Fee') { title.innerText = "Entry Fee Badlein"; input.value = entryFee; }
-            else if (type === 'Sheet') { title.innerText = "Google Script Link"; input.value = googleSheetUrl; }
-            else if (type === 'Delete') { title.innerText = "Admin Password Maange"; input.type = "password"; input.placeholder = "Password Daalein"; }
-
-            modal.classList.remove('hidden');
-            modal.classList.add('flex');
+        // Modal Input Logic
+        window.openInput = (type, id = null) => {
+            activeAction = type; activeId = id;
+            const m = document.getElementById('modalBox');
+            const t = document.getElementById('modalTitle');
+            const i = document.getElementById('modalInput');
+            i.type = "text"; i.value = "";
+            if (type === 'QR') { t.innerText = "Update QR Link"; i.value = scannerUrl; }
+            else if (type === 'Fee') { t.innerText = "Update Fee"; i.value = entryFee; }
+            else if (type === 'Sheet') { t.innerText = "Update Google Script URL"; i.value = googleSheetUrl; }
+            else if (type === 'Delete') { t.innerText = "Admin Password for Delete"; i.type = "password"; }
+            m.classList.remove('hidden'); m.classList.add('flex');
         };
 
-        window.saveModalInput = async () => {
-            const val = document.getElementById('modalInputValue').value.trim();
-            const modal = document.getElementById('inputModal');
-            
-            if (!val) return alert("Kuch toh daalo bhai!");
-
+        window.saveInput = async () => {
+            const val = document.getElementById('modalInput').value.trim();
+            if (!val) return;
             try {
-                if (activeSettingType === 'Delete') {
-                    if (val !== adminPassword) return alert("Galat Password!");
-                    await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'registrations', activeDeleteId));
-                    showMessage("Entry Deleted!", "success");
+                if (activeAction === 'Delete') {
+                    if (val !== dashboardPass) return alert("Wrong Password!");
+                    await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'registrations', activeId));
+                    showMessage("Deleted!", "success");
                 } else {
-                    let updateObj = {};
-                    if (activeSettingType === 'QR') updateObj.scannerUrl = val;
-                    else if (activeSettingType === 'Fee') updateObj.entryFee = val;
-                    else if (activeSettingType === 'Sheet') updateObj.googleSheetUrl = val;
-
-                    await setDoc(getSettingsDoc(), updateObj, { merge: true });
+                    let up = {};
+                    if (activeAction === 'QR') up.scannerUrl = val;
+                    else if (activeAction === 'Fee') up.entryFee = val;
+                    else if (activeAction === 'Sheet') up.googleSheetUrl = val;
+                    await setDoc(getSettingsDoc(), up, { merge: true });
                     showMessage("Settings Saved!", "success");
                 }
-                modal.classList.add('hidden');
-            } catch (error) { alert("Permission Error!"); }
+                document.getElementById('modalBox').classList.add('hidden');
+            } catch (e) { showMessage("Permission Denied!", "error"); }
         };
 
-        // --- TAP TRIGGERS ---
-        window.handleVersionTap = () => {
-            clearTimeout(buildTapTimer);
-            buildTapCount++;
-            buildTapTimer = setTimeout(() => buildTapCount = 0, 2000);
-            if (buildTapCount >= 10) {
-                buildTapCount = 0;
-                document.getElementById('loginModal').classList.remove('hidden');
-                document.getElementById('loginModal').classList.add('flex');
-            }
+        // Tap Handlers
+        window.tapBuild = () => {
+            clearTimeout(bTimer); bTaps++;
+            bTimer = setTimeout(() => bTaps = 0, 1500);
+            if (bTaps >= 10) { bTaps = 0; document.getElementById('dashModal').classList.remove('hidden'); document.getElementById('dashModal').classList.add('flex'); }
         };
 
-        window.handleSettingsTap = () => {
-            clearTimeout(settingsTapTimer);
-            settingsTapCount++;
-            settingsTapTimer = setTimeout(() => settingsTapCount = 0, 2000);
-            if (settingsTapCount >= 10) {
-                settingsTapCount = 0;
-                document.getElementById('settingsLoginModal').classList.remove('hidden');
-                document.getElementById('settingsLoginModal').classList.add('flex');
-            }
+        window.tapSettings = () => {
+            clearTimeout(sTimer); sTaps++;
+            sTimer = setTimeout(() => sTaps = 0, 1500);
+            if (sTaps >= 10) { sTaps = 0; document.getElementById('secModal').classList.remove('hidden'); document.getElementById('secModal').classList.add('flex'); }
         };
 
-        window.checkAdminLogin = () => {
-            if (document.getElementById('adminPass').value === adminPassword) {
-                document.getElementById('loginModal').classList.add('hidden');
-                document.getElementById('adminSection').classList.remove('hidden');
-                document.getElementById('registrationSection').classList.add('hidden');
+        window.loginDash = () => {
+            if (document.getElementById('passDash').value === dashboardPass) {
+                document.getElementById('dashModal').classList.add('hidden');
+                document.getElementById('adminPanel').classList.remove('hidden');
+                document.getElementById('regFormArea').classList.add('hidden');
                 window.scrollTo(0,0);
-            } else { alert("Galat Password!"); }
+            } else alert("Galat Password!");
         };
 
-        window.checkSettingsLogin = () => {
-            if (document.getElementById('settingsPass').value === settingsPassword) {
-                document.getElementById('settingsLoginModal').classList.add('hidden');
-                document.getElementById('settingsBtnGroup').classList.remove('hidden');
-                document.getElementById('settingsBtnGroup').classList.add('flex');
-                showMessage("Settings Unlocked!", "success");
-            } else { alert("Secret Password Galat Hai!"); }
+        window.loginSec = () => {
+            if (document.getElementById('passSec').value === settingsPassSecret) {
+                document.getElementById('secModal').classList.add('hidden');
+                document.getElementById('setGroup').classList.remove('hidden');
+                document.getElementById('setGroup').classList.add('flex');
+            } else alert("Galat Secret Key!");
         };
 
-        window.closeAdmin = () => {
-            document.getElementById('adminSection').classList.add('hidden');
-            document.getElementById('settingsBtnGroup').classList.add('hidden');
-            document.getElementById('registrationSection').classList.remove('hidden');
+        window.exitAdmin = () => {
+            document.getElementById('adminPanel').classList.add('hidden');
+            document.getElementById('setGroup').classList.add('hidden');
+            document.getElementById('regFormArea').classList.remove('hidden');
         };
 
-        window.viewScreenshot = (id) => {
-            const reg = registrations.find(r => r.id === id);
-            if (reg && reg.screenshot) {
-                document.getElementById('modalImg').src = reg.screenshot;
-                document.getElementById('imageModal').classList.remove('hidden');
-                document.getElementById('imageModal').classList.add('flex');
+        window.showImg = (id) => {
+            const r = registrations.find(reg => reg.id === id);
+            if (r && r.screenshot) {
+                document.getElementById('bigImg').src = r.screenshot;
+                document.getElementById('imgModal').classList.remove('hidden');
+                document.getElementById('imgModal').classList.add('flex');
             }
         };
 
-        function renderAdminTable() {
-            const tbody = document.getElementById('adminTableBody');
-            if (!tbody) return;
+        function renderAdmin() {
+            const tb = document.getElementById('adminTableBody');
+            if (!tb) return;
             const sorted = registrations.sort((a,b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0));
-            tbody.innerHTML = sorted.map((r, index) => `
-                <tr class="border-b border-slate-800 text-[11px] hover:bg-slate-900/40 transition">
-                    <td class="p-3 text-slate-500 font-bold text-center">${index + 1}</td>
+            tb.innerHTML = sorted.map((r, i) => `
+                <tr class="border-b border-slate-800 text-[11px] hover:bg-slate-900/30">
+                    <td class="p-3 text-center font-bold text-slate-500">${i + 1}</td>
                     <td class="p-3">
                         <div class="font-bold text-blue-400 uppercase">${r.playerName}</div>
-                        <div class="text-[9px] text-green-500 font-mono">${r.whatsapp}</div>
-                        <div class="text-[9px] text-slate-400 italic">${r.village || 'N/A'}</div>
+                        <div class="text-[9px] text-slate-500 italic">${r.village}</div>
                     </td>
                     <td class="p-3 font-mono">
                         <div class="text-slate-300">UID: ${r.gameUid}</div>
-                        <div class="text-yellow-500 font-bold tracking-tighter">UTR: ${r.utr}</div>
-                        <div class="text-pink-400 text-[9px] font-bold uppercase">${r.payName || 'N/A'}</div>
+                        <div class="text-yellow-500 font-bold">UTR: ${r.utr}</div>
+                        <div class="text-pink-500 text-[9px] font-bold uppercase">${r.payName}</div>
                     </td>
                     <td class="p-3 text-center">
-                        <span class="px-2 py-0.5 rounded-full text-[8px] font-bold ${r.status==='Confirmed'?'bg-green-600':r.status==='Rejected'?'bg-red-600':'bg-slate-700'}">
-                            ${r.status} ${r.syncedToSheet ? '📊' : ''}
-                        </span>
+                        <span class="px-2 py-0.5 rounded-full text-[8px] font-bold ${r.status==='Confirmed'?'bg-green-600':'bg-slate-700'}">${r.status}</span>
                     </td>
-                    <td class="p-3 flex gap-1 justify-center">
-                        <button onclick="viewScreenshot('${r.id}')" class="bg-blue-600/20 text-blue-400 p-1.5 rounded active:scale-90 transition"><i data-lucide="eye" class="w-3.5 h-3.5"></i></button>
-                        <button onclick="handleStatus('${r.id}', 'Confirmed')" class="bg-green-600 text-white p-1.5 rounded shadow-lg active:scale-90" title="Confirm"><i data-lucide="check" class="w-3.5 h-3.5"></i></button>
-                        <button onclick="handleStatus('${r.id}', 'Rejected')" class="bg-red-600 text-white p-1.5 rounded active:scale-90" title="Reject"><i data-lucide="x" class="w-3.5 h-3.5"></i></button>
-                        <button onclick="openInputModal('Delete', '${r.id}')" class="bg-slate-800 text-slate-500 p-1.5 rounded hover:bg-red-900 active:scale-90 transition"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
+                    <td class="p-3 flex gap-1.5 justify-center items-center">
+                        <button onclick="showImg('${r.id}')" class="bg-blue-600/20 text-blue-400 p-2 rounded-lg"><i data-lucide="eye" class="w-3.5"></i></button>
+                        <button onclick="handleStatus('${r.id}', 'Confirmed')" class="bg-green-600 text-white p-2 rounded-lg shadow-lg"><i data-lucide="check" class="w-3.5"></i></button>
+                        <button onclick="handleStatus('${r.id}', 'Rejected')" class="bg-red-600 text-white p-2 rounded-lg"><i data-lucide="x" class="w-3.5"></i></button>
+                        <button onclick="openInput('Delete', '${r.id}')" class="bg-slate-800 text-slate-500 p-2 rounded-lg"><i data-lucide="trash-2" class="w-3.5"></i></button>
                     </td>
                 </tr>
             `).join('');
             lucide.createIcons();
         }
 
-        function showMessage(msg, type) {
-            const t = document.getElementById('toast');
-            t.innerText = msg;
-            t.className = `fixed bottom-10 right-5 p-4 rounded-xl text-white font-bold z-[500] transition-all duration-300 shadow-2xl ${type==='success'?'bg-green-600 shadow-green-900/40':'bg-red-600 shadow-red-900/40'}`;
-            t.style.opacity = "1";
-            t.style.transform = "translateY(0)";
-            setTimeout(() => { t.style.opacity = "0"; t.style.transform = "translateY(20px)"; }, 3000);
+        function showMessage(m, t) {
+            const toast = document.getElementById('toast');
+            toast.innerText = m;
+            toast.className = `fixed bottom-10 right-5 p-4 rounded-xl text-white font-bold z-[1000] transition-all duration-300 shadow-2xl ${t==='success'?'bg-green-600':'bg-red-600'}`;
+            toast.style.opacity = "1";
+            setTimeout(() => toast.style.opacity = "0", 3000);
         }
 
-        window.onload = () => { initAuth(); lucide.createIcons(); };
+        window.onload = () => { startSystem(); lucide.createIcons(); };
     </script>
 
     <style>
@@ -333,45 +284,44 @@
 <body class="min-h-screen">
 
     <header class="p-5 border-b border-blue-900/20 bg-slate-900/80 sticky top-0 z-40 backdrop-blur-md text-center">
-        <h1 class="text-xl md:text-2xl font-gaming font-black text-blue-500 uppercase italic tracking-tighter">Sunil FF Pro V5</h1>
+        <h1 class="text-xl md:text-2xl font-gaming font-black text-blue-500 uppercase italic tracking-widest">Sunil FF Pro V5</h1>
     </header>
 
     <main class="max-w-6xl mx-auto p-4 mt-6">
         
-        <!-- Registration Form -->
-        <div id="registrationSection" class="animate-in fade-in duration-500">
+        <div id="regFormArea" class="animate-in fade-in duration-500">
             <div class="glass p-6 md:p-10 rounded-[3rem] shadow-2xl relative overflow-hidden">
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
-                    <div class="space-y-6">
-                        <h2 class="text-2xl font-gaming font-bold uppercase text-blue-400 italic">Tournament Form</h2>
+                    <div>
+                        <h2 class="text-2xl font-gaming font-bold uppercase text-blue-400 mb-8 italic">Tournament Form</h2>
                         <form id="regForm" onsubmit="submitRegistration(event)" class="space-y-4">
                             <div class="grid grid-cols-2 gap-4">
-                                <input type="text" id="playerName" placeholder="FF Name" required class="bg-slate-950 border border-slate-800 p-4 rounded-2xl outline-none focus:border-blue-500 text-white">
-                                <input type="number" id="gameUid" placeholder="FF UID" required class="bg-slate-950 border border-slate-800 p-4 rounded-2xl outline-none focus:border-blue-500 text-white">
+                                <input type="text" id="playerName" placeholder="FF Name" required class="bg-slate-950 border border-slate-800 p-4 rounded-2xl outline-none focus:border-blue-500 text-white text-sm">
+                                <input type="number" id="gameUid" placeholder="FF UID" required class="bg-slate-950 border border-slate-800 p-4 rounded-2xl outline-none focus:border-blue-500 text-white text-sm">
                             </div>
                             <div class="grid grid-cols-2 gap-4">
-                                <input type="text" id="whatsapp" placeholder="WhatsApp No." required pattern="[0-9]{10}" maxlength="10" class="bg-slate-950 border border-slate-800 p-4 rounded-2xl outline-none focus:border-blue-500 text-white">
-                                <input type="text" id="village" placeholder="Village" required class="bg-slate-950 border border-slate-800 p-4 rounded-2xl outline-none focus:border-blue-500 text-white">
+                                <input type="text" id="whatsapp" placeholder="WhatsApp No." required pattern="[0-9]{10}" maxlength="10" class="bg-slate-950 border border-slate-800 p-4 rounded-2xl outline-none focus:border-blue-500 text-white text-sm">
+                                <input type="text" id="village" placeholder="Village (Gaon)" required class="bg-slate-950 border border-slate-800 p-4 rounded-2xl outline-none focus:border-blue-500 text-white text-sm">
                             </div>
-                            <input type="text" id="teamName" placeholder="Team Name (Optional)" class="w-full bg-slate-950 border border-slate-800 p-4 rounded-2xl outline-none focus:border-blue-500 text-white">
+                            <input type="text" id="teamName" placeholder="Team Name (Optional)" class="w-full bg-slate-950 border border-slate-800 p-4 rounded-2xl outline-none focus:border-blue-500 text-white text-sm">
 
                             <div class="p-6 bg-blue-600/5 rounded-[2.5rem] border border-blue-500/10 space-y-4 shadow-inner">
-                                <p class="text-[10px] font-black text-blue-400 uppercase tracking-widest text-center italic">Payment Details</p>
-                                <input type="text" id="payName" placeholder="PhonePe / Paytm Name" required class="w-full bg-slate-950 border border-slate-800 p-4 rounded-xl outline-none focus:border-blue-500 text-center text-white">
-                                <input type="text" id="utr" placeholder="12 Digit UTR Number" required pattern="[0-9]{12}" maxlength="12" class="w-full bg-slate-950 border border-slate-800 p-4 rounded-xl outline-none focus:border-blue-500 font-mono text-center text-white">
+                                <p class="text-[10px] font-black text-blue-400 uppercase tracking-widest text-center italic">Payment Verification</p>
+                                <input type="text" id="payName" placeholder="App Name (PhonePe/Paytm Name)" required class="w-full bg-slate-950 border border-slate-800 p-4 rounded-xl outline-none focus:border-blue-500 text-center text-white text-sm">
+                                <input type="text" id="utr" placeholder="12 Digit UTR Number" required pattern="[0-9]{12}" maxlength="12" class="w-full bg-slate-950 border border-slate-800 p-4 rounded-xl outline-none focus:border-blue-500 font-mono text-center text-white text-sm tracking-widest">
                                 <div class="flex items-center justify-center p-2 border border-dashed border-slate-800 rounded-xl">
-                                    <input type="file" id="screenshot" accept="image/*" required class="text-[10px] text-slate-500 file:bg-blue-600 file:text-white file:border-0 file:px-3 file:py-1.5 file:rounded-lg cursor-pointer">
+                                    <input type="file" id="screenshot" accept="image/*" required class="text-[10px] text-slate-500 file:bg-blue-600 file:text-white file:px-3 file:py-1.5 file:rounded-lg">
                                 </div>
                             </div>
-                            <button type="submit" id="submitBtn" class="w-full bg-gradient-to-r from-blue-600 to-blue-800 hover:from-blue-500 hover:to-blue-700 py-5 rounded-[2rem] font-gaming font-black uppercase tracking-widest italic shadow-xl transition-all active:scale-[0.98]">Register Now</button>
+                            <button type="submit" id="submitBtn" class="w-full bg-gradient-to-r from-blue-600 to-blue-800 py-5 rounded-[2rem] font-gaming font-black uppercase tracking-widest italic shadow-xl transition-all active:scale-95">Register Now</button>
                         </form>
                     </div>
 
-                    <div class="flex flex-col items-center bg-slate-900/40 p-12 rounded-[4rem] text-center border border-slate-800 shadow-inner">
-                        <h3 id="displayFee" class="text-5xl font-gaming font-black text-white mb-2 italic tracking-tighter">₹50</h3>
-                        <p class="text-xs font-bold text-blue-500 uppercase mb-10 tracking-[0.3em]">Entry Fee</p>
-                        <div class="bg-white p-5 rounded-[2.5rem] shadow-2xl mb-8 group transition overflow-hidden">
-                            <img id="mainScanner" src="" alt="Scanner" class="w-48 h-48 rounded-xl object-contain group-hover:scale-105 transition duration-500">
+                    <div class="flex flex-col items-center bg-slate-900/40 p-12 rounded-[4rem] border border-slate-800 shadow-inner">
+                        <h3 id="displayFee" class="text-5xl font-gaming font-black text-white mb-2 italic">₹50</h3>
+                        <p class="text-xs font-bold text-blue-500 uppercase mb-8 tracking-[0.3em]">Entry Fee</p>
+                        <div class="bg-white p-5 rounded-[2.5rem] shadow-2xl mb-6">
+                            <img id="mainScanner" src="https://accessible-gold-euwxs5d623.edgeone.app/AccountQRCodeNsdl%20Payments%20Bank%20Limited%20-%206448_DARK_THEME.png" alt="Scanner" class="w-48 h-48 rounded-xl object-contain">
                         </div>
                         <p id="displayFeeText" class="text-[10px] text-slate-500 uppercase font-bold tracking-widest font-gaming">Scan & Pay ₹50</p>
                     </div>
@@ -379,109 +329,87 @@
             </div>
         </div>
 
-        <!-- Admin Section -->
-        <div id="adminSection" class="hidden space-y-6">
+        <div id="adminPanel" class="hidden space-y-6 animate-in slide-in-from-top-5 duration-500">
             <div class="grid grid-cols-2 gap-4">
-                <div class="glass p-5 rounded-3xl text-center border border-slate-800 shadow-lg">
+                <div class="glass p-5 rounded-3xl text-center shadow-lg">
                     <p id="totalCount" class="text-2xl font-gaming text-white">0</p>
                     <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Total Players</p>
                 </div>
-                <div class="glass p-5 rounded-3xl text-center border border-green-900/30 shadow-lg">
+                <div class="glass p-5 rounded-3xl text-center border border-green-900/30">
                     <p id="confCount" class="text-2xl font-gaming text-green-400">0</p>
                     <p class="text-[10px] text-green-500 font-bold uppercase tracking-widest">Confirmed</p>
                 </div>
             </div>
 
             <div class="flex flex-wrap justify-between items-center bg-slate-900/95 p-6 rounded-[2.5rem] border border-blue-500/20 shadow-2xl gap-4">
-                <!-- 10 TAP TRIGGER ON THIS TITLE FOR SECRET SETTINGS -->
-                <div onclick="handleSettingsTap()" class="cursor-pointer select-none p-4 hover:bg-white/5 rounded-2xl transition-all active:scale-95 group">
-                    <h2 class="text-xl font-gaming font-bold text-white uppercase italic tracking-widest border-b border-dashed border-blue-500/30 pb-1 inline-block group-hover:text-blue-400">Admin Dashboard</h2>
-                    <p class="text-[8px] text-slate-600 uppercase font-bold mt-1">Tap 10x for Settings</p>
+                <div onclick="tapSettings()" class="cursor-pointer select-none p-2 hover:bg-white/5 rounded-xl active:scale-95 group">
+                    <h2 class="text-xl font-gaming font-bold text-white uppercase italic tracking-widest border-b border-dashed border-blue-500/30 pb-1 group-hover:text-blue-400">Admin Dashboard</h2>
                 </div>
                 
-                <div id="settingsBtnGroup" class="hidden flex-wrap gap-2 animate-in slide-in-from-right-10 duration-500">
-                    <button onclick="openInputModal('Sheet')" class="bg-green-600 px-4 py-2 rounded-xl text-[10px] font-black uppercase shadow-lg hover:bg-green-500 transition">Set Sheet</button>
-                    <button onclick="openInputModal('Fee')" class="bg-indigo-600 px-4 py-2 rounded-xl text-[10px] font-black uppercase shadow-lg hover:bg-indigo-500 transition">Fee</button>
-                    <button onclick="openInputModal('QR')" class="bg-blue-600 px-4 py-2 rounded-xl text-[10px] font-black uppercase shadow-lg hover:bg-blue-500 transition">Change QR</button>
+                <div id="setGroup" class="hidden flex-wrap gap-2 animate-in fade-in duration-500">
+                    <button onclick="openInput('Sheet')" class="bg-green-600 px-4 py-2 rounded-xl text-[10px] font-black uppercase transition shadow-lg">Set Sheet</button>
+                    <button onclick="openInput('Fee')" class="bg-indigo-600 px-4 py-2 rounded-xl text-[10px] font-black uppercase transition shadow-lg">Fee</button>
+                    <button onclick="openInput('QR')" class="bg-blue-600 px-4 py-2 rounded-xl text-[10px] font-black uppercase transition shadow-lg">QR Link</button>
                 </div>
-                <button onclick="closeAdmin()" class="bg-slate-800 px-4 py-2 rounded-xl text-[10px] font-black uppercase transition border border-white/5 active:scale-90">Exit</button>
+                <button onclick="exitAdmin()" class="bg-slate-800 px-4 py-2 rounded-xl text-[10px] font-black uppercase">Exit</button>
             </div>
 
-            <div class="glass rounded-[2.5rem] overflow-hidden shadow-2xl border border-slate-800">
-                <div class="overflow-x-auto max-h-[60vh]">
-                    <table class="w-full text-left">
-                        <thead class="bg-slate-950/50 text-[10px] uppercase font-black text-slate-500 border-b border-slate-800">
-                            <tr>
-                                <th class="p-5 italic text-center">S.No</th>
-                                <th class="p-5 italic">Player / Village</th>
-                                <th class="p-5 italic text-center">Details / AppName</th>
-                                <th class="p-5 italic text-center">Status</th>
-                                <th class="p-5 italic text-center">Action</th>
-                            </tr>
-                        </thead>
-                        <tbody id="adminTableBody" class="divide-y divide-slate-800/40"></tbody>
-                    </table>
-                </div>
+            <div class="glass rounded-[2.5rem] overflow-hidden shadow-2xl border border-slate-800 overflow-x-auto">
+                <table class="w-full text-left">
+                    <thead class="bg-slate-950/50 text-[10px] uppercase font-black text-slate-500 border-b border-slate-800">
+                        <tr><th class="p-4 text-center">S.No</th><th class="p-4">Details</th><th class="p-4">UID/UTR/App</th><th class="p-4 text-center">Status</th><th class="p-4 text-center">Action</th></tr>
+                    </thead>
+                    <tbody id="adminTableBody" class="divide-y divide-slate-800/40"></tbody>
+                </table>
             </div>
         </div>
 
         <footer class="mt-20 text-center pb-16">
-            <!-- 10 TAP TRIGGER ON THIS VERSION TEXT FOR ADMIN ACCESS -->
-            <p onclick="handleVersionTap()" class="text-slate-800 text-[10px] font-bold uppercase tracking-[0.8em] cursor-pointer select-none hover:text-blue-500 transition-all duration-500 py-4 px-8 inline-block">
-                Build 1.3.8-Ultra-Secure
+            <p onclick="tapBuild()" class="text-slate-800 text-[10px] font-bold uppercase tracking-[0.8em] cursor-pointer select-none hover:text-blue-500 transition-all py-4 px-8 inline-block">
+                Build 1.4.1-Final-Master
             </p>
         </footer>
     </main>
 
-    <!-- Modal: Admin Dashboard Password -->
-    <div id="loginModal" class="fixed inset-0 bg-slate-950/95 backdrop-blur-3xl z-[200] hidden items-center justify-center p-6">
-        <div class="glass w-full max-w-sm p-12 rounded-[3.5rem] text-center shadow-2xl border-blue-500/20">
-            <h3 class="text-2xl font-gaming font-black text-white mb-8 uppercase italic">Admin Access</h3>
-            <input type="password" id="adminPass" placeholder="Dashboard Pass" class="w-full bg-slate-950 border border-slate-800 p-5 rounded-[1.5rem] outline-none focus:border-blue-500 text-center mb-6 text-white font-mono text-xl tracking-[0.3em] shadow-inner">
+    <!-- Modals -->
+    <div id="dashModal" class="fixed inset-0 bg-slate-950/95 z-[500] hidden items-center justify-center p-6 backdrop-blur-3xl">
+        <div class="glass w-full max-w-sm p-12 rounded-[3.5rem] text-center border-blue-500/20 shadow-2xl">
+            <h3 class="text-2xl font-gaming font-black text-white mb-8 italic uppercase">Dashboard Access</h3>
+            <input type="password" id="passDash" placeholder="Enter Password" class="w-full bg-slate-950 border border-slate-800 p-5 rounded-[1.5rem] text-center mb-6 text-white font-mono text-xl tracking-[0.3em] outline-none focus:border-blue-500">
             <div class="flex gap-4">
-                <button onclick="checkAdminLogin()" class="flex-1 bg-blue-600 text-white font-black py-4 rounded-2xl uppercase shadow-xl active:scale-95 transition-all">Unlock</button>
-                <button onclick="document.getElementById('loginModal').classList.add('hidden')" class="flex-1 bg-slate-800 text-slate-400 font-black py-4 rounded-2xl uppercase transition-all">Cancel</button>
+                <button onclick="loginDash()" class="flex-1 bg-blue-600 text-white font-black py-4 rounded-2xl active:scale-95 transition">Unlock</button>
+                <button onclick="document.getElementById('dashModal').classList.add('hidden')" class="flex-1 bg-slate-800 text-slate-400 py-4 rounded-2xl">Cancel</button>
             </div>
         </div>
     </div>
 
-    <!-- Modal: Secret Settings Password -->
-    <div id="settingsLoginModal" class="fixed inset-0 bg-slate-950/98 backdrop-blur-3xl z-[210] hidden items-center justify-center p-6">
-        <div class="glass w-full max-w-sm p-12 rounded-[3.5rem] text-center shadow-2xl border-indigo-500/20">
-            <div class="w-16 h-16 bg-indigo-600/20 rounded-full flex items-center justify-center mx-auto mb-6">
-                <i data-lucide="shield-alert" class="text-indigo-500"></i>
-            </div>
-            <h3 class="text-xl font-gaming font-black text-white mb-6 uppercase">Secret Settings</h3>
-            <input type="password" id="settingsPass" placeholder="Secret Key" class="w-full bg-slate-950 border border-slate-800 p-5 rounded-[1.5rem] outline-none focus:border-indigo-500 text-center mb-6 text-white font-mono text-xl tracking-[0.3em]">
+    <div id="secModal" class="fixed inset-0 bg-slate-950/98 z-[600] hidden items-center justify-center p-6 backdrop-blur-3xl">
+        <div class="glass w-full max-w-sm p-12 rounded-[3.5rem] text-center border-indigo-500/20 shadow-2xl">
+            <h3 class="text-xl font-gaming font-black text-white mb-6 uppercase italic">Secret Settings</h3>
+            <input type="password" id="passSec" placeholder="Secret Key" class="w-full bg-slate-950 border border-slate-800 p-5 rounded-[1.5rem] text-center mb-6 text-white font-mono text-xl tracking-[0.3em] outline-none focus:border-indigo-500">
             <div class="flex gap-4">
-                <button onclick="checkSettingsLogin()" class="flex-1 bg-indigo-600 text-white font-black py-4 rounded-2xl uppercase shadow-xl active:scale-95 transition-all">Unhide</button>
-                <button onclick="document.getElementById('settingsLoginModal').classList.add('hidden')" class="flex-1 bg-slate-800 text-slate-400 font-black py-4 rounded-2xl uppercase transition-all">Back</button>
+                <button onclick="loginSec()" class="flex-1 bg-indigo-600 text-white font-black py-4 rounded-2xl active:scale-95 transition">Reveal</button>
+                <button onclick="document.getElementById('secModal').classList.add('hidden')" class="flex-1 bg-slate-800 text-slate-400 py-4 rounded-2xl">Back</button>
             </div>
         </div>
     </div>
 
-    <!-- Modal: Generic Input (Sheet Link, QR Link, Fee, Delete) -->
-    <div id="inputModal" class="fixed inset-0 bg-slate-950/98 backdrop-blur-3xl z-[300] hidden items-center justify-center p-6">
+    <div id="modalBox" class="fixed inset-0 bg-slate-950/98 z-[700] hidden items-center justify-center p-6 backdrop-blur-3xl">
         <div class="glass w-full max-w-md p-10 rounded-[3rem] text-center shadow-2xl border-white/5">
-            <h3 id="inputModalTitle" class="text-xl font-gaming font-black text-white mb-6 uppercase tracking-wider">Update</h3>
-            <div class="mb-8">
-                <input type="text" id="modalInputValue" class="w-full bg-slate-950 border border-slate-800 p-5 rounded-2xl outline-none focus:border-blue-500 text-white text-center text-sm font-medium shadow-inner">
-            </div>
+            <h3 id="modalTitle" class="text-xl font-gaming font-black text-white mb-6 uppercase">Update</h3>
+            <input type="text" id="modalInput" class="w-full bg-slate-950 border border-slate-800 p-5 rounded-2xl text-white text-center mb-8 outline-none focus:border-blue-500 text-sm">
             <div class="flex gap-4">
-                <button onclick="saveModalInput()" class="flex-1 bg-blue-600 text-white font-black py-4 rounded-2xl uppercase shadow-lg active:scale-95 transition-all">Save Change</button>
-                <button onclick="document.getElementById('inputModal').classList.add('hidden')" class="flex-1 bg-slate-800 text-slate-400 font-black py-4 rounded-2xl uppercase transition-all">Cancel</button>
+                <button onclick="saveInput()" class="flex-1 bg-blue-600 text-white font-black py-4 rounded-2xl active:scale-95 transition">Save</button>
+                <button onclick="document.getElementById('modalBox').classList.add('hidden')" class="flex-1 bg-slate-800 text-slate-400 py-4 rounded-2xl">Cancel</button>
             </div>
         </div>
     </div>
 
-    <!-- Modal: Image Viewer -->
-    <div id="imageModal" class="fixed inset-0 bg-slate-950/98 z-[100] hidden items-center justify-center p-4 md:p-12 backdrop-blur-3xl text-white">
-        <button onclick="document.getElementById('imageModal').classList.add('hidden')" class="absolute top-8 right-8 text-white bg-red-600 p-4 rounded-2xl shadow-2xl active:scale-90 transition"><i data-lucide="x" class="w-6 h-6"></i></button>
-        <img id="modalImg" src="" alt="Screenshot" class="max-w-full max-h-[85vh] rounded-[2.5rem] shadow-2xl border border-white/10 object-contain">
+    <div id="imgModal" class="fixed inset-0 bg-slate-950/98 z-[800] hidden items-center justify-center p-4 md:p-12 backdrop-blur-3xl">
+        <button onclick="document.getElementById('imgModal').classList.add('hidden')" class="absolute top-8 right-8 text-white bg-red-600 p-4 rounded-2xl shadow-2xl active:scale-90 transition"><i data-lucide="x" class="w-6 h-6"></i></button>
+        <img id="bigImg" src="" alt="Screenshot" class="max-w-full max-h-[85vh] rounded-[2.5rem] shadow-2xl border border-white/10 object-contain">
     </div>
 
-    <!-- Toast Notifications -->
     <div id="toast" class="opacity-0 pointer-events-none translate-y-10 shadow-2xl"></div>
-
 </body>
 </html>
