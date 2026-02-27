@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sunil FF Pro - Dual Secure Admin</title>
+    <title>Sunil FF Pro - Advanced Secure Admin</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     
@@ -31,27 +31,26 @@
         const auth = getAuth(app);
         const db = getFirestore(app);
 
-        // State Management
+        // State
         let currentUser = null;
         let registrations = [];
         let scannerUrl = "https://accessible-gold-euwxs5d623.edgeone.app/AccountQRCodeNsdl%20Payments%20Bank%20Limited%20-%206448_DARK_THEME.png";
         let entryFee = "50";
         let googleSheetUrl = ""; 
         
-        // Passwords
         const adminPassword = "125991sunil";   
         const settingsPassword = "73551109anil"; 
 
-        // Tap Counters
         let buildTapCount = 0;
         let settingsTapCount = 0;
         let buildTapTimer = null;
         let settingsTapTimer = null;
 
+        let activeSettingType = null;
+
         const getRegCol = () => collection(db, 'artifacts', appId, 'public', 'data', 'registrations');
         const getSettingsDoc = () => doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'config');
 
-        // Auth
         async function initAuth() {
             try {
                 if (initialToken) { await signInWithCustomToken(auth, initialToken); } 
@@ -67,16 +66,26 @@
             }
         });
 
+        // Settings Listener (Updates UI automatically when changed in DB)
         function loadSettings() {
             onSnapshot(getSettingsDoc(), (snap) => {
                 if (snap.exists()) {
                     const data = snap.data();
                     scannerUrl = data.scannerUrl || scannerUrl;
-                    entryFee = data.entryFee || "50";
-                    googleSheetUrl = data.googleSheetUrl || "";
-                    if(document.getElementById('mainScanner')) document.getElementById('mainScanner').src = scannerUrl;
-                    if(document.getElementById('displayFee')) document.getElementById('displayFee').innerText = "₹" + entryFee;
+                    entryFee = data.entryFee || entryFee;
+                    googleSheetUrl = data.googleSheetUrl || googleSheetUrl;
+                    
+                    // Update main UI elements
+                    const sc = document.getElementById('mainScanner');
+                    const fe = document.getElementById('displayFee');
+                    const fe2 = document.getElementById('displayFeeText');
+                    
+                    if(sc) sc.src = scannerUrl;
+                    if(fe) fe.innerText = "₹" + entryFee;
+                    if(fe2) fe2.innerText = "Scan & Pay ₹" + entryFee;
                 }
+            }, (err) => {
+                console.error("Settings Load Error:", err);
             });
         }
 
@@ -114,7 +123,7 @@
             e.preventDefault();
             const btn = document.getElementById('submitBtn');
             btn.disabled = true;
-            btn.innerText = "Processing...";
+            btn.innerText = "Registering...";
 
             const data = {
                 playerName: document.getElementById('playerName').value,
@@ -144,10 +153,12 @@
         async function finalizeSave(data) {
             try {
                 await addDoc(getRegCol(), data);
-                showMessage("Success! Sunil Bhai confirm karenge.", "success");
+                showMessage("Success! Registration Saved.", "success");
                 document.getElementById('regForm').reset();
-            } catch (e) { showMessage("Error: " + e.message, "error"); }
-            finally {
+            } catch (e) { 
+                showMessage("Database Error: Rules check karein!", "error");
+                console.error(e);
+            } finally {
                 document.getElementById('submitBtn').disabled = false;
                 document.getElementById('submitBtn').innerText = "Register Now";
             }
@@ -176,39 +187,63 @@
                     await updateDoc(docRef, { status: status });
                     showMessage(`Status: ${status}`, "success");
                 }
-            } catch (e) { alert("Error!"); }
+            } catch (e) { alert("Action Failed!"); }
         };
 
-        window.deleteEntry = async (id) => {
-            if(confirm("Hamesha ke liye delete karein?")){
-                const pass = prompt("Delete karne ke liye Dashboard Password daalein:");
-                if(pass !== adminPassword) return alert("Galat Password!");
-                await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'registrations', id));
-                showMessage("Deleted!", "success");
-            }
+        // --- UPDATED MODAL INPUT SAVE LOGIC ---
+        window.openInputModal = (type) => {
+            activeSettingType = type;
+            const modal = document.getElementById('inputModal');
+            const title = document.getElementById('inputModalTitle');
+            const input = document.getElementById('modalInputValue');
+            
+            input.type = "text";
+            input.value = "";
+            
+            if (type === 'QR') { title.innerText = "Set QR Image Link"; input.placeholder = "https://..."; input.value = scannerUrl; }
+            else if (type === 'Fee') { title.innerText = "Set Entry Fee"; input.placeholder = "e.g. 100"; input.value = entryFee; }
+            else if (type === 'Sheet') { title.innerText = "Set Google Script URL"; input.placeholder = "https://script..."; input.value = googleSheetUrl; }
+            else if (type === 'Delete') { title.innerText = "Confirm Delete"; input.placeholder = "Dashboard Password"; input.type = "password"; }
+
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
         };
 
-        window.updateSettings = async (type) => {
-            let updateObj = {};
-            if (type === 'QR') {
-                const val = prompt("Naya QR Image Link:", scannerUrl);
-                if (val) updateObj.scannerUrl = val;
-            } else if (type === 'Fee') {
-                const val = prompt("Nayi Entry Fee:", entryFee);
-                if (val) updateObj.entryFee = val;
-            } else if (type === 'Sheet') {
-                const val = prompt("Google Script URL paste karein:", googleSheetUrl);
-                if (val) updateObj.googleSheetUrl = val;
-            }
-            if (Object.keys(updateObj).length > 0) {
-                try {
+        window.saveModalInput = async () => {
+            const val = document.getElementById('modalInputValue').value.trim();
+            const modal = document.getElementById('inputModal');
+            
+            if (!val && activeSettingType !== 'Delete') return alert("Khali nahi chhod sakte!");
+
+            try {
+                if (activeSettingType === 'Delete') {
+                    if (val !== adminPassword) return alert("Galat Password!");
+                    const delId = modal.dataset.delId;
+                    await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'registrations', delId));
+                    showMessage("Deleted Successfully!", "success");
+                } else {
+                    let updateObj = {};
+                    if (activeSettingType === 'QR') updateObj.scannerUrl = val;
+                    else if (activeSettingType === 'Fee') updateObj.entryFee = val;
+                    else if (activeSettingType === 'Sheet') updateObj.googleSheetUrl = val;
+
+                    // This writes to Firestore
                     await setDoc(getSettingsDoc(), updateObj, { merge: true });
-                    alert("Updated Successfully!");
-                } catch (e) { alert("Error updating settings!"); }
+                    showMessage("Saved to Cloud!", "success");
+                }
+                modal.classList.add('hidden');
+            } catch (error) {
+                console.error("Save Error:", error);
+                alert("Permission Denied! Check Firestore Rules.");
             }
         };
 
-        // --- 10 TAP ADMIN (Build Version Text) ---
+        window.deleteEntryPrompt = (id) => {
+            document.getElementById('inputModal').dataset.delId = id;
+            openInputModal('Delete');
+        };
+
+        // --- TAP TRIGGERS ---
         window.handleVersionTap = () => {
             clearTimeout(buildTapTimer);
             buildTapCount++;
@@ -220,14 +255,12 @@
             }
         };
 
-        // --- 10 TAP SETTINGS (Dashboard Header) ---
         window.handleSettingsTap = () => {
             clearTimeout(settingsTapTimer);
             settingsTapCount++;
             settingsTapTimer = setTimeout(() => settingsTapCount = 0, 2000);
             if (settingsTapCount >= 10) {
                 settingsTapCount = 0;
-                // Prompt ki jagah modal use kar rahe hain for stability
                 document.getElementById('settingsLoginModal').classList.remove('hidden');
                 document.getElementById('settingsLoginModal').classList.add('flex');
             }
@@ -289,10 +322,10 @@
                         </span>
                     </td>
                     <td class="p-3 flex gap-1 justify-center">
-                        <button onclick="viewScreenshot('${r.id}')" class="bg-blue-600/20 text-blue-400 p-1.5 rounded"><i data-lucide="eye" class="w-3.5 h-3.5"></i></button>
+                        <button onclick="viewScreenshot('${r.id}')" class="bg-blue-600/20 text-blue-400 p-1.5 rounded active:scale-90"><i data-lucide="eye" class="w-3.5 h-3.5"></i></button>
                         <button onclick="handleStatus('${r.id}', 'Confirmed')" class="bg-green-600 text-white p-1.5 rounded shadow-lg active:scale-90" title="Confirm"><i data-lucide="check" class="w-3.5 h-3.5"></i></button>
-                        <button onclick="handleStatus('${r.id}', 'Rejected')" class="bg-red-600 text-white p-1.5 rounded" title="Reject"><i data-lucide="x" class="w-3.5 h-3.5"></i></button>
-                        <button onclick="deleteEntry('${r.id}')" class="bg-slate-800 text-slate-500 p-1.5 rounded hover:bg-red-900 transition"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
+                        <button onclick="handleStatus('${r.id}', 'Rejected')" class="bg-red-600 text-white p-1.5 rounded active:scale-90" title="Reject"><i data-lucide="x" class="w-3.5 h-3.5"></i></button>
+                        <button onclick="deleteEntryPrompt('${r.id}')" class="bg-slate-800 text-slate-500 p-1.5 rounded hover:bg-red-900 transition active:scale-90"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
                     </td>
                 </tr>
             `).join('');
@@ -302,7 +335,7 @@
         function showMessage(msg, type) {
             const t = document.getElementById('toast');
             t.innerText = msg;
-            t.className = `fixed bottom-10 right-5 p-4 rounded-xl text-white font-bold z-[110] transition-all duration-300 shadow-2xl ${type==='success'?'bg-green-600 shadow-green-900/40':'bg-red-600 shadow-red-900/40'}`;
+            t.className = `fixed bottom-10 right-5 p-4 rounded-xl text-white font-bold z-[250] transition-all duration-300 shadow-2xl ${type==='success'?'bg-green-600 shadow-green-900/40':'bg-red-600 shadow-red-900/40'}`;
             t.style.opacity = "1";
             t.style.transform = "translateY(0)";
             setTimeout(() => { t.style.opacity = "0"; t.style.transform = "translateY(20px)"; }, 3000);
@@ -332,7 +365,7 @@
             <div class="glass p-6 md:p-10 rounded-[3rem] shadow-2xl relative overflow-hidden">
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
                     <div class="space-y-6">
-                        <h2 class="text-2xl font-gaming font-bold uppercase text-blue-400 italic">Join Tournament</h2>
+                        <h2 class="text-2xl font-gaming font-bold uppercase text-blue-400 italic">Tournament Form</h2>
                         <form id="regForm" onsubmit="submitRegistration(event)" class="space-y-4">
                             <div class="grid grid-cols-2 gap-4">
                                 <input type="text" id="playerName" placeholder="FF Name" required class="bg-slate-950 border border-slate-800 p-4 rounded-2xl outline-none focus:border-blue-500 text-white">
@@ -352,7 +385,7 @@
                                     <input type="file" id="screenshot" accept="image/*" required class="text-[10px] text-slate-500 file:bg-blue-600 file:text-white file:border-0 file:px-3 file:py-1.5 file:rounded-lg cursor-pointer">
                                 </div>
                             </div>
-                            <button type="submit" id="submitBtn" class="w-full bg-gradient-to-r from-blue-600 to-blue-800 hover:from-blue-500 hover:to-blue-700 py-5 rounded-[2rem] font-gaming font-black uppercase tracking-widest italic shadow-xl transition-all">Register Now</button>
+                            <button type="submit" id="submitBtn" class="w-full bg-gradient-to-r from-blue-600 to-blue-800 hover:from-blue-500 hover:to-blue-700 py-5 rounded-[2rem] font-gaming font-black uppercase tracking-widest italic shadow-xl transition-all active:scale-[0.98]">Register Now</button>
                         </form>
                     </div>
 
@@ -362,7 +395,7 @@
                         <div class="bg-white p-5 rounded-[2.5rem] shadow-2xl mb-8 group transition">
                             <img id="mainScanner" src="https://accessible-gold-euwxs5d623.edgeone.app/AccountQRCodeNsdl%20Payments%20Bank%20Limited%20-%206448_DARK_THEME.png" alt="Scanner" class="w-48 h-48 rounded-xl object-contain group-hover:scale-105 transition">
                         </div>
-                        <p class="text-[10px] text-slate-500 uppercase font-bold tracking-widest font-gaming">Scan & Pay ₹50</p>
+                        <p id="displayFeeText" class="text-[10px] text-slate-500 uppercase font-bold tracking-widest font-gaming">Scan & Pay ₹50</p>
                     </div>
                 </div>
             </div>
@@ -382,16 +415,15 @@
             </div>
 
             <div class="flex flex-wrap justify-between items-center bg-slate-900/95 p-6 rounded-[2.5rem] border border-blue-500/20 shadow-2xl gap-4">
-                <!-- 10 TAP TRIGGER ON THIS BOX FOR SETTINGS -->
                 <div onclick="handleSettingsTap()" class="cursor-pointer select-none p-4 hover:bg-white/5 rounded-2xl transition-all active:scale-95 group">
                     <h2 class="text-xl font-gaming font-bold text-white uppercase italic tracking-widest border-b border-dashed border-blue-500/30 pb-1 inline-block group-hover:text-blue-400">Admin Dashboard</h2>
                     <p class="text-[8px] text-slate-600 uppercase font-bold mt-1">Tap 10x for Settings</p>
                 </div>
                 
                 <div id="settingsBtnGroup" class="hidden flex-wrap gap-2 animate-in slide-in-from-right-10 duration-500">
-                    <button onclick="updateSettings('Sheet')" class="bg-green-600 px-4 py-2 rounded-xl text-[10px] font-black uppercase shadow-lg hover:bg-green-500 transition">Set Sheet</button>
-                    <button onclick="updateSettings('Fee')" class="bg-indigo-600 px-4 py-2 rounded-xl text-[10px] font-black uppercase shadow-lg hover:bg-indigo-500 transition">Fee</button>
-                    <button onclick="updateSettings('QR')" class="bg-blue-600 px-4 py-2 rounded-xl text-[10px] font-black uppercase shadow-lg hover:bg-blue-500 transition">QR</button>
+                    <button onclick="openInputModal('Sheet')" class="bg-green-600 px-4 py-2 rounded-xl text-[10px] font-black uppercase shadow-lg hover:bg-green-500 transition">Set Sheet</button>
+                    <button onclick="openInputModal('Fee')" class="bg-indigo-600 px-4 py-2 rounded-xl text-[10px] font-black uppercase shadow-lg hover:bg-indigo-500 transition">Fee</button>
+                    <button onclick="openInputModal('QR')" class="bg-blue-600 px-4 py-2 rounded-xl text-[10px] font-black uppercase shadow-lg hover:bg-blue-500 transition">Change QR</button>
                 </div>
                 <button onclick="closeAdmin()" class="bg-slate-800 px-4 py-2 rounded-xl text-[10px] font-black uppercase transition border border-white/5 active:scale-90">Exit</button>
             </div>
@@ -403,7 +435,7 @@
                             <tr>
                                 <th class="p-5 italic text-center">S.No</th>
                                 <th class="p-5 italic">Player / Village</th>
-                                <th class="p-5 italic">Details / AppName</th>
+                                <th class="p-5 italic text-center">Details / PayName</th>
                                 <th class="p-5 italic text-center">Status</th>
                                 <th class="p-5 italic text-center">Action</th>
                             </tr>
@@ -415,14 +447,28 @@
         </div>
 
         <footer class="mt-20 text-center pb-16">
-            <p onclick="handleVersionTap()" class="text-slate-800 text-[10px] font-black uppercase tracking-[0.8em] cursor-pointer select-none hover:text-blue-500 transition-all duration-500 py-4 px-8 inline-block">
-                Build 1.3.4-Secure-Final
+            <p onclick="handleVersionTap()" class="text-slate-800 text-[10px] font-bold uppercase tracking-[0.8em] cursor-pointer select-none hover:text-blue-500 transition-all duration-500 py-4 px-8 inline-block">
+                Build 1.3.6-Scanner-Fixed
             </p>
         </footer>
     </main>
 
-    <!-- Admin Dashboard Modal -->
-    <div id="loginModal" class="fixed inset-0 bg-slate-950/95 backdrop-blur-3xl z-[100] hidden items-center justify-center p-6">
+    <!-- Generic Input Modal -->
+    <div id="inputModal" class="fixed inset-0 bg-slate-950/98 backdrop-blur-3xl z-[300] hidden items-center justify-center p-6">
+        <div class="glass w-full max-w-md p-10 rounded-[3rem] text-center shadow-2xl border-white/5">
+            <h3 id="inputModalTitle" class="text-xl font-gaming font-black text-white mb-6 uppercase tracking-wider">Update</h3>
+            <div class="mb-8">
+                <input type="text" id="modalInputValue" class="w-full bg-slate-950 border border-slate-800 p-5 rounded-2xl outline-none focus:border-blue-500 text-white text-center text-sm font-medium shadow-inner">
+            </div>
+            <div class="flex gap-4">
+                <button onclick="saveModalInput()" class="flex-1 bg-blue-600 text-white font-black py-4 rounded-2xl uppercase shadow-lg active:scale-95 transition-all">Save Change</button>
+                <button onclick="document.getElementById('inputModal').classList.add('hidden')" class="flex-1 bg-slate-800 text-slate-400 font-black py-4 rounded-2xl uppercase transition-all">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modals (Auth, Image) -->
+    <div id="loginModal" class="fixed inset-0 bg-slate-950/95 backdrop-blur-3xl z-[150] hidden items-center justify-center p-6">
         <div class="glass w-full max-w-sm p-12 rounded-[3.5rem] text-center shadow-2xl border-blue-500/20">
             <h3 class="text-2xl font-gaming font-black text-white mb-8 uppercase italic">Admin Access</h3>
             <input type="password" id="adminPass" placeholder="Enter Password" class="w-full bg-slate-950 border border-slate-800 p-5 rounded-[1.5rem] outline-none focus:border-blue-500 text-center mb-6 text-white font-mono text-xl tracking-[0.3em] shadow-inner">
@@ -433,12 +479,8 @@
         </div>
     </div>
 
-    <!-- Secret Settings Modal -->
-    <div id="settingsLoginModal" class="fixed inset-0 bg-slate-950/98 backdrop-blur-3xl z-[120] hidden items-center justify-center p-6">
+    <div id="settingsLoginModal" class="fixed inset-0 bg-slate-950/98 backdrop-blur-3xl z-[160] hidden items-center justify-center p-6">
         <div class="glass w-full max-w-sm p-12 rounded-[3.5rem] text-center shadow-2xl border-indigo-500/20">
-            <div class="w-16 h-16 bg-indigo-600/20 rounded-full flex items-center justify-center mx-auto mb-6">
-                <i data-lucide="shield-alert" class="text-indigo-500"></i>
-            </div>
             <h3 class="text-xl font-gaming font-black text-white mb-6 uppercase">Secret Settings</h3>
             <input type="password" id="settingsPass" placeholder="Secret Key" class="w-full bg-slate-950 border border-slate-800 p-5 rounded-[1.5rem] outline-none focus:border-indigo-500 text-center mb-6 text-white font-mono text-xl tracking-[0.3em]">
             <div class="flex gap-4">
@@ -448,7 +490,6 @@
         </div>
     </div>
 
-    <!-- Image Viewer -->
     <div id="imageModal" class="fixed inset-0 bg-slate-950/98 z-[100] hidden items-center justify-center p-4 md:p-12 backdrop-blur-3xl">
         <button onclick="document.getElementById('imageModal').classList.add('hidden')" class="absolute top-8 right-8 text-white bg-red-600 p-4 rounded-2xl shadow-2xl active:scale-90 transition"><i data-lucide="x" class="w-6 h-6"></i></button>
         <img id="modalImg" src="" alt="Screenshot" class="max-w-full max-h-[85vh] rounded-[2.5rem] shadow-2xl border border-white/10 object-contain">
