@@ -12,18 +12,29 @@
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, doc, addDoc, setDoc, onSnapshot, updateDoc, serverTimestamp, deleteDoc, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // Firebase Config
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'sunil-ff-v4';
+        // --- GITHUB PAR CHALANE KE LIYE AAPKA REAL CONFIG ---
+        const manualConfig = {
+            apiKey: "AIzaSyDJie-ZFkaSjxAck7ohpegafgTyy6e-2AY",
+            authDomain: "sunilesports-ff-4f4ad.firebaseapp.com",
+            projectId: "sunilesports-ff-4f4ad",
+            storageBucket: "sunilesports-ff-4f4ad.firebasestorage.app",
+            messagingSenderId: "929173626716",
+            appId: "1:929173626716:web:15b971ba5ab9197da26b99",
+            measurementId: "G-0R3ZZ1VNSF"
+        };
+
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : manualConfig;
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'sunilesports-ff-4f4ad'; // Project ID use kar rahe hain
         const initialToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
 
+        // State Management
         let currentUser = null;
         let registrations = [];
-        let scannerUrl = "https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=upi://pay?pa=yoursunilupi@okaxis&pn=Sunil%20Live&am=50";
+        let scannerUrl = "https://accessible-gold-euwxs5d623.edgeone.app/AccountQRCodeNsdl%20Payments%20Bank%20Limited%20-%206448_DARK_THEME.png";
         let entryFee = "50";
         let googleSheetUrl = ""; 
         let tapCount = 0;
@@ -32,11 +43,15 @@
         const getRegCol = () => collection(db, 'artifacts', appId, 'public', 'data', 'registrations');
         const getSettingsDoc = () => doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'config');
 
+        // Rule 3: Auth First
         async function initAuth() {
             try {
                 if (initialToken) { await signInWithCustomToken(auth, initialToken); } 
                 else { await signInAnonymously(auth); }
-            } catch (e) { console.error("Auth Fail:", e); }
+            } catch (e) { 
+                console.error("Auth Fail:", e); 
+                showMessage("Database connect nahi hua. Config sahi se bharein.", "error");
+            }
         }
 
         onAuthStateChanged(auth, (user) => {
@@ -77,9 +92,7 @@
             if (!googleSheetUrl) return;
             try {
                 await fetch(googleSheetUrl, {
-                    method: 'POST',
-                    mode: 'no-cors',
-                    cache: 'no-cache',
+                    method: 'POST', mode: 'no-cors', cache: 'no-cache',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(data)
                 });
@@ -105,6 +118,8 @@
 
         window.submitRegistration = async (e) => {
             e.preventDefault();
+            if (!currentUser) return showMessage("Pehle connect hone dein...", "error");
+
             const btn = document.getElementById('submitBtn');
             btn.disabled = true;
             btn.innerText = "Saving Online...";
@@ -115,6 +130,7 @@
                 whatsapp: document.getElementById('whatsapp').value,
                 village: document.getElementById('village').value,
                 teamName: document.getElementById('teamName').value,
+                payName: document.getElementById('payName').value, 
                 utr: document.getElementById('utr').value,
                 status: 'Pending',
                 remark: '',
@@ -151,15 +167,12 @@
                 const docSnap = await getDoc(docRef);
                 const playerData = docSnap.data();
 
-                if (status === 'Confirmed' && !playerData.syncedToSheet) {
+                if (status === 'Confirmed' && !playerData.syncedToSheet && googleSheetUrl) {
                     await sendToGoogleSheet({
-                        playerName: playerData.playerName,
-                        gameUid: playerData.gameUid,
-                        whatsapp: playerData.whatsapp,
-                        village: playerData.village,
-                        teamName: playerData.teamName,
-                        utr: playerData.utr,
-                        status: 'Confirmed'
+                        playerName: playerData.playerName, gameUid: playerData.gameUid,
+                        whatsapp: playerData.whatsapp, village: playerData.village,
+                        teamName: playerData.teamName, payName: playerData.payName,
+                        utr: playerData.utr, status: 'Confirmed'
                     });
                     await updateDoc(docRef, { status: status, syncedToSheet: true });
                     showMessage("Confirmed & Synced!", "success");
@@ -180,26 +193,25 @@
         window.updateSettings = async (type) => {
             let updateObj = {};
             if (type === 'QR') {
-                const val = prompt("QR Image ka Link (URL) yaha paste karein:", scannerUrl);
+                const val = prompt("QR Image Link Paste Karein:", scannerUrl);
                 if (val) updateObj.scannerUrl = val;
             } else if (type === 'Fee') {
                 const val = prompt("Nayi Entry Fee daalein:", entryFee);
                 if (val) updateObj.entryFee = val;
             } else if (type === 'Sheet') {
-                const val = prompt("Google Script URL:", googleSheetUrl);
+                const val = prompt("Google Script Link:", googleSheetUrl);
                 if (val) updateObj.googleSheetUrl = val;
             }
             if (Object.keys(updateObj).length > 0) {
                 await setDoc(getSettingsDoc(), updateObj, { merge: true });
-                alert("Updated!");
+                alert("Settings Updated!");
             }
         };
 
-        // Admin Access Trigger: Updated to 10 taps
         window.handleVersionTap = () => {
             clearTimeout(tapTimer);
             tapCount++;
-            tapTimer = setTimeout(() => tapCount = 0, 1000); // 1 second reset time for better user experience
+            tapTimer = setTimeout(() => tapCount = 0, 1000);
             if (tapCount >= 10) {
                 tapCount = 0;
                 document.getElementById('loginModal').classList.remove('hidden');
@@ -212,6 +224,7 @@
                 document.getElementById('loginModal').classList.add('hidden');
                 document.getElementById('adminSection').classList.remove('hidden');
                 document.getElementById('registrationSection').classList.add('hidden');
+                window.scrollTo(0,0);
             } else { alert("Galat Password!"); }
         };
 
@@ -235,26 +248,27 @@
             const sorted = registrations.sort((a,b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0));
             tbody.innerHTML = sorted.map((r, index) => `
                 <tr class="border-b border-slate-800 text-[11px] hover:bg-slate-900/40 transition">
-                    <td class="p-3 text-slate-500 font-bold">${index + 1}</td>
+                    <td class="p-3 text-slate-500 font-bold text-center">${index + 1}</td>
                     <td class="p-3">
                         <div class="font-bold text-blue-400 uppercase">${r.playerName}</div>
-                        <div class="text-[10px] text-green-500 font-mono">${r.whatsapp}</div>
-                        <div class="text-[9px] text-slate-500 italic">Village: ${r.village || 'N/A'}</div>
+                        <div class="text-[9px] text-green-500 font-mono">${r.whatsapp}</div>
+                        <div class="text-[9px] text-slate-400 italic">${r.village || 'N/A'}</div>
                     </td>
                     <td class="p-3 font-mono">
                         <div class="text-slate-300">UID: ${r.gameUid}</div>
                         <div class="text-yellow-500 font-bold">UTR: ${r.utr}</div>
+                        <div class="text-pink-400 text-[9px] font-bold">Payer: ${r.payName || 'N/A'}</div>
                     </td>
                     <td class="p-3 text-center">
                         <span class="px-2 py-0.5 rounded-full text-[8px] font-bold ${r.status==='Confirmed'?'bg-green-600':r.status==='Rejected'?'bg-red-600':'bg-slate-700'}">
-                            ${r.status} ${r.syncedToSheet ? '📊' : ''}
+                            ${r.status}
                         </span>
                     </td>
                     <td class="p-3 flex gap-1 justify-center">
-                        <button onclick="viewScreenshot('${r.id}')" class="bg-blue-600/20 text-blue-400 p-1.5 rounded"><i data-lucide="eye" class="w-3 h-3"></i></button>
-                        <button onclick="handleStatus('${r.id}', 'Confirmed')" class="bg-green-600 text-white p-1.5 rounded" title="Confirm"><i data-lucide="check" class="w-3 h-3"></i></button>
-                        <button onclick="handleStatus('${r.id}', 'Rejected')" class="bg-red-600 text-white p-1.5 rounded"><i data-lucide="x" class="w-3 h-3"></i></button>
-                        <button onclick="deleteEntry('${r.id}')" class="bg-slate-800 text-slate-500 p-1.5 rounded hover:bg-red-900 transition"><i data-lucide="trash-2" class="w-3 h-3"></i></button>
+                        <button onclick="viewScreenshot('${r.id}')" class="bg-blue-600/20 text-blue-400 p-1.5 rounded"><i data-lucide="eye" class="w-3.5 h-3.5"></i></button>
+                        <button onclick="handleStatus('${r.id}', 'Confirmed')" class="bg-green-600 text-white p-1.5 rounded" title="Confirm"><i data-lucide="check" class="w-3.5 h-3.5"></i></button>
+                        <button onclick="handleStatus('${r.id}', 'Rejected')" class="bg-red-600 text-white p-1.5 rounded"><i data-lucide="x" class="w-3.5 h-3.5"></i></button>
+                        <button onclick="deleteEntry('${r.id}')" class="bg-slate-800 text-slate-500 p-1.5 rounded hover:bg-red-900 transition"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
                     </td>
                 </tr>
             `).join('');
@@ -277,21 +291,14 @@
         @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@600;900&family=Inter:wght@400;700&display=swap');
         body { background: #020617; color: #f1f5f9; font-family: 'Inter', sans-serif; }
         .font-gaming { font-family: 'Orbitron', sans-serif; }
-        .glass { background: rgba(15, 23, 42, 0.95); backdrop-filter: blur(20px); border: 1px solid rgba(59, 130, 246, 0.1); }
-        .sticky-head { background: #0f172a; position: sticky; top: 0; z-index: 20; }
+        .glass { background: rgba(15, 23, 42, 0.95); backdrop-filter: blur(20px); border: 1px solid rgba(255, 255, 255, 0.05); }
         input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
     </style>
 </head>
 <body class="min-h-screen">
 
-    <header class="p-5 border-b border-blue-900/20 bg-slate-900/80 sticky top-0 z-40 backdrop-blur-md">
-        <div class="max-w-6xl mx-auto flex justify-between items-center">
-            <h1 class="text-xl md:text-2xl font-gaming font-black text-blue-500 uppercase italic tracking-tighter">Sunil FF Pro</h1>
-            <div class="flex gap-4">
-                <a href="https://youtube.com/@sunillive1" target="_blank" class="text-red-500"><i data-lucide="youtube"></i></a>
-                <a href="https://instagram.com/sunil_live_1" target="_blank" class="text-pink-500"><i data-lucide="instagram"></i></a>
-            </div>
-        </div>
+    <header class="p-5 border-b border-blue-900/20 bg-slate-900/80 sticky top-0 z-40 backdrop-blur-md text-center">
+        <h1 class="text-xl md:text-2xl font-gaming font-black text-blue-500 uppercase italic tracking-tighter">Sunil FF Pro V5</h1>
     </header>
 
     <main class="max-w-6xl mx-auto p-4 mt-6">
@@ -300,59 +307,58 @@
             <div class="glass p-6 md:p-10 rounded-[3rem] shadow-2xl relative overflow-hidden">
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
                     <div>
-                        <h2 class="text-2xl font-gaming font-bold uppercase mb-8 text-blue-400 italic">Join Tournament</h2>
+                        <h2 class="text-2xl font-gaming font-bold uppercase mb-8 text-blue-400 italic">Tournament Form</h2>
                         <form id="regForm" onsubmit="submitRegistration(event)" class="space-y-4">
                             <div class="grid grid-cols-2 gap-4">
                                 <input type="text" id="playerName" placeholder="FF Name" required class="bg-slate-950 border border-slate-800 p-4 rounded-2xl outline-none focus:border-blue-500 text-white">
                                 <input type="number" id="gameUid" placeholder="FF UID" required class="bg-slate-950 border border-slate-800 p-4 rounded-2xl outline-none focus:border-blue-500 text-white">
                             </div>
                             <div class="grid grid-cols-2 gap-4">
-                                <input type="text" id="whatsapp" placeholder="WhatsApp Number" required pattern="[0-9]{10}" maxlength="10" title="Kripya 10 ank ka real number daalein" class="bg-slate-950 border border-slate-800 p-4 rounded-2xl outline-none focus:border-blue-500 text-white">
+                                <input type="text" id="whatsapp" placeholder="WhatsApp (10 Digit)" required pattern="[0-9]{10}" maxlength="10" class="bg-slate-950 border border-slate-800 p-4 rounded-2xl outline-none focus:border-blue-500 text-white">
                                 <input type="text" id="village" placeholder="Village (Gaon)" required class="bg-slate-950 border border-slate-800 p-4 rounded-2xl outline-none focus:border-blue-500 text-white">
                             </div>
-                            <div class="grid grid-cols-1">
-                                <input type="text" id="teamName" placeholder="Team Name (Optional)" class="bg-slate-950 border border-slate-800 p-4 rounded-2xl outline-none focus:border-blue-500 text-white">
-                            </div>
+                            <input type="text" id="teamName" placeholder="Team Name (Optional)" class="w-full bg-slate-950 border border-slate-800 p-4 rounded-2xl outline-none focus:border-blue-500 text-white">
 
-                            <div class="p-6 bg-blue-600/5 rounded-[2.5rem] border border-blue-500/10 space-y-4 shadow-inner text-center">
-                                <p class="text-[10px] font-black text-blue-400 uppercase tracking-widest italic text-center">Payment Verification</p>
-                                <input type="text" id="utr" placeholder="12 Digit UTR Number" required pattern="[0-9]{12}" maxlength="12" title="Kripya 12 ank ka UTR number daalein" class="w-full bg-slate-950 border border-slate-800 p-4 rounded-xl outline-none focus:border-blue-500 font-mono text-center text-white">
+                            <div class="p-6 bg-blue-600/5 rounded-[2.5rem] border border-blue-500/10 space-y-4">
+                                <p class="text-[10px] font-black text-blue-400 uppercase tracking-widest text-center">Payment Details</p>
+                                <input type="text" id="payName" placeholder="App Name (PhonePe/Paytm Name)" required class="w-full bg-slate-950 border border-slate-800 p-4 rounded-xl outline-none focus:border-blue-500 text-center text-white">
+                                <input type="text" id="utr" placeholder="12 Digit UTR Number" required pattern="[0-9]{12}" maxlength="12" class="w-full bg-slate-950 border border-slate-800 p-4 rounded-xl outline-none focus:border-blue-500 font-mono text-center text-white">
                                 <input type="file" id="screenshot" accept="image/*" required class="text-[10px] text-slate-500 file:bg-blue-600 file:text-white file:border-0 file:px-4 file:py-1.5 file:rounded-lg cursor-pointer">
                             </div>
-                            <button type="submit" id="submitBtn" class="w-full bg-gradient-to-r from-blue-600 to-blue-800 hover:from-blue-500 hover:to-blue-700 py-5 rounded-[2rem] font-gaming font-black uppercase tracking-widest italic shadow-xl transition-all">Register Now</button>
+                            <button type="submit" id="submitBtn" class="w-full bg-gradient-to-r from-blue-600 to-blue-800 hover:from-blue-500 hover:to-blue-700 py-5 rounded-[2rem] font-gaming font-black uppercase tracking-widest shadow-xl transition-all">Register Now</button>
                         </form>
                     </div>
 
                     <div class="flex flex-col items-center bg-slate-900/40 p-12 rounded-[4rem] text-center border border-slate-800 shadow-inner">
-                        <h3 id="displayFee" class="text-5xl font-gaming font-black text-white mb-2 italic tracking-tighter">₹50</h3>
+                        <h3 id="displayFee" class="text-5xl font-gaming font-black text-white mb-2 italic">₹50</h3>
                         <p class="text-xs font-bold text-blue-500 uppercase mb-10 tracking-[0.3em]">Entry Fee</p>
                         <div class="bg-white p-5 rounded-[2.5rem] shadow-2xl mb-8">
-                            <img src="" alt="Scanner" id="mainScanner" class="w-48 h-48 rounded-xl object-contain">
+                            <img src="https://accessible-gold-euwxs5d623.edgeone.app/AccountQRCodeNsdl%20Payments%20Bank%20Limited%20-%206448_DARK_THEME.png" alt="Scanner" id="mainScanner" class="w-48 h-48 rounded-xl object-contain">
                         </div>
-                        <p class="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Scan & Pay ₹50</p>
+                        <p class="text-[10px] text-slate-500 uppercase font-bold tracking-widest">Scan & Pay ₹50</p>
                     </div>
                 </div>
             </div>
         </div>
 
-        <div id="adminSection" class="hidden animate-in slide-in-from-top-10 duration-500 space-y-6">
+        <div id="adminSection" class="hidden space-y-6">
             <div class="grid grid-cols-2 gap-4">
                 <div class="glass p-5 rounded-3xl text-center border border-slate-800">
-                    <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-1">Total</p>
                     <p id="totalCount" class="text-2xl font-gaming text-white">0</p>
+                    <p class="text-[10px] text-slate-500 font-bold uppercase">Total</p>
                 </div>
                 <div class="glass p-5 rounded-3xl text-center border border-green-900/30">
-                    <p class="text-[10px] text-green-500 font-bold uppercase tracking-widest mb-1">Confirmed</p>
                     <p id="confCount" class="text-2xl font-gaming text-green-400">0</p>
+                    <p class="text-[10px] text-green-500 font-bold uppercase">Confirmed</p>
                 </div>
             </div>
 
             <div class="flex flex-wrap justify-between items-center bg-slate-900/95 p-6 rounded-[2.5rem] border border-blue-500/20 shadow-2xl gap-4">
-                <h2 class="text-xl font-gaming font-bold text-white uppercase italic tracking-widest">Admin Control</h2>
+                <h2 class="text-xl font-gaming font-bold text-white uppercase italic tracking-widest">Admin Panel</h2>
                 <div class="flex flex-wrap gap-2">
-                    <button onclick="updateSettings('Sheet')" class="bg-green-600 px-4 py-2 rounded-xl text-[10px] font-black uppercase transition">Google Sheet</button>
+                    <button onclick="updateSettings('Sheet')" class="bg-green-600 px-4 py-2 rounded-xl text-[10px] font-black uppercase transition">Sheet</button>
                     <button onclick="updateSettings('Fee')" class="bg-indigo-600 px-4 py-2 rounded-xl text-[10px] font-black uppercase transition">Fee</button>
-                    <button onclick="updateSettings('QR')" class="bg-blue-600 px-4 py-2 rounded-xl text-[10px] font-black uppercase transition">Change QR</button>
+                    <button onclick="updateSettings('QR')" class="bg-blue-600 px-4 py-2 rounded-xl text-[10px] font-black uppercase transition">QR</button>
                     <button onclick="closeAdmin()" class="bg-slate-800 px-4 py-2 rounded-xl text-[10px] font-black uppercase transition">Exit</button>
                 </div>
             </div>
@@ -360,11 +366,11 @@
             <div class="glass rounded-[2.5rem] overflow-hidden shadow-2xl border border-slate-800">
                 <div class="overflow-x-auto max-h-[60vh]">
                     <table class="w-full text-left">
-                        <thead class="text-[10px] uppercase font-black text-slate-500 border-b border-slate-800 sticky-head">
+                        <thead class="text-[10px] uppercase font-black text-slate-500 border-b border-slate-800">
                             <tr>
-                                <th class="p-5 italic">S.No</th>
+                                <th class="p-5 italic text-center">S.No</th>
                                 <th class="p-5 italic">Player / Village</th>
-                                <th class="p-5 italic">UID / UTR</th>
+                                <th class="p-5 italic">Details / AppName</th>
                                 <th class="p-5 italic text-center">Status</th>
                                 <th class="p-5 italic text-center">Action</th>
                             </tr>
@@ -377,14 +383,14 @@
 
         <footer class="mt-20 text-center pb-16">
             <p onclick="handleVersionTap()" class="text-slate-800 text-[10px] font-bold uppercase tracking-[0.8em] cursor-pointer select-none hover:text-blue-500 transition-all duration-500">
-                Build 1.2.7-Security-Plus
+                Build 1.2.9-GitHub-Final
             </p>
         </footer>
     </main>
 
     <div id="loginModal" class="fixed inset-0 bg-slate-950/95 backdrop-blur-3xl z-[100] hidden items-center justify-center p-6">
-        <div class="glass w-full max-w-sm p-12 rounded-[3.5rem] text-center shadow-2xl animate-in zoom-in-95 duration-300">
-            <h3 class="text-2xl font-gaming font-black text-white mb-8 uppercase italic tracking-widest">Admin Access</h3>
+        <div class="glass w-full max-w-sm p-12 rounded-[3.5rem] text-center shadow-2xl border-blue-500/20">
+            <h3 class="text-2xl font-gaming font-black text-white mb-8 uppercase italic">Admin Access</h3>
             <input type="password" id="adminPass" placeholder="Password" class="w-full bg-slate-950 border border-slate-800 p-5 rounded-[1.5rem] outline-none focus:border-blue-500 text-center mb-6 text-white font-mono text-xl tracking-[0.3em] shadow-inner">
             <div class="flex gap-4">
                 <button onclick="checkAdminLogin()" class="flex-1 bg-blue-600 text-white font-black py-4 rounded-2xl uppercase tracking-widest shadow-xl transition-all">Unlock</button>
@@ -395,7 +401,7 @@
 
     <div id="imageModal" class="fixed inset-0 bg-slate-950/98 z-[100] hidden items-center justify-center p-4 md:p-12 backdrop-blur-3xl">
         <button onclick="document.getElementById('imageModal').classList.add('hidden')" class="absolute top-8 right-8 text-white bg-red-600 p-4 rounded-2xl shadow-2xl active:scale-90 transition"><i data-lucide="x" class="w-6 h-6"></i></button>
-        <img id="modalImg" src="" alt="Screenshot" class="max-w-full max-h-[85vh] rounded-[2.5rem] shadow-2xl border border-white/10">
+        <img id="modalImg" src="" alt="Screenshot" class="max-w-full max-h-[85vh] rounded-[2.5rem] shadow-2xl border border-white/10 object-contain">
     </div>
 
     <div id="toast" class="opacity-0 pointer-events-none translate-y-10 shadow-2xl"></div>
