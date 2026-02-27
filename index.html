@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sunil FF Pro - Advanced Secure Admin</title>
+    <title>Sunil FF Pro - Secure Master</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     
@@ -12,7 +12,7 @@
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, doc, addDoc, setDoc, onSnapshot, updateDoc, serverTimestamp, deleteDoc, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // --- Firebase Config ---
+        // Firebase Configuration
         const firebaseConfig = {
             apiKey: "AIzaSyDJie-ZFkaSjxAck7ohpegafgTyy6e-2AY",
             authDomain: "sunilesports-ff-4f4ad.firebaseapp.com",
@@ -47,10 +47,12 @@
         let settingsTapTimer = null;
 
         let activeSettingType = null;
+        let activeDeleteId = null;
 
         const getRegCol = () => collection(db, 'artifacts', appId, 'public', 'data', 'registrations');
         const getSettingsDoc = () => doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'config');
 
+        // Auth Logic (Rule 3)
         async function initAuth() {
             try {
                 if (initialToken) { await signInWithCustomToken(auth, initialToken); } 
@@ -66,7 +68,6 @@
             }
         });
 
-        // Settings Listener (Updates UI automatically when changed in DB)
         function loadSettings() {
             onSnapshot(getSettingsDoc(), (snap) => {
                 if (snap.exists()) {
@@ -75,17 +76,10 @@
                     entryFee = data.entryFee || entryFee;
                     googleSheetUrl = data.googleSheetUrl || googleSheetUrl;
                     
-                    // Update main UI elements
-                    const sc = document.getElementById('mainScanner');
-                    const fe = document.getElementById('displayFee');
-                    const fe2 = document.getElementById('displayFeeText');
-                    
-                    if(sc) sc.src = scannerUrl;
-                    if(fe) fe.innerText = "₹" + entryFee;
-                    if(fe2) fe2.innerText = "Scan & Pay ₹" + entryFee;
+                    document.getElementById('mainScanner').src = scannerUrl;
+                    document.getElementById('displayFee').innerText = "₹" + entryFee;
+                    document.getElementById('displayFeeText').innerText = "Scan & Pay ₹" + entryFee;
                 }
-            }, (err) => {
-                console.error("Settings Load Error:", err);
             });
         }
 
@@ -98,25 +92,8 @@
         }
 
         function updateStats() {
-            if(document.getElementById('totalCount')) document.getElementById('totalCount').innerText = registrations.length;
-            if(document.getElementById('confCount')) document.getElementById('confCount').innerText = registrations.filter(r => r.status === 'Confirmed').length;
-        }
-
-        async function compressImage(base64Str) {
-            return new Promise((resolve) => {
-                const img = new Image();
-                img.src = base64Str;
-                img.onload = () => {
-                    const canvas = document.createElement('canvas');
-                    const MAX_WIDTH = 600;
-                    const scaleSize = MAX_WIDTH / img.width;
-                    canvas.width = MAX_WIDTH;
-                    canvas.height = img.height * scaleSize;
-                    const ctx = canvas.getContext('2d');
-                    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-                    resolve(canvas.toDataURL('image/jpeg', 0.6));
-                };
-            });
+            document.getElementById('totalCount').innerText = registrations.length;
+            document.getElementById('confCount').innerText = registrations.filter(r => r.status === 'Confirmed').length;
         }
 
         window.submitRegistration = async (e) => {
@@ -143,7 +120,19 @@
             if (fileInput.files[0]) {
                 const reader = new FileReader();
                 reader.onload = async (ev) => {
-                    data.screenshot = await compressImage(ev.target.result);
+                    const img = new Image();
+                    img.src = ev.target.result;
+                    img.onload = async () => {
+                        const canvas = document.createElement('canvas');
+                        const MAX_WIDTH = 600;
+                        canvas.width = MAX_WIDTH;
+                        canvas.height = img.height * (MAX_WIDTH / img.width);
+                        img.getContext ? null : canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+                        data.screenshot = canvas.toDataURL('image/jpeg', 0.6);
+                        await finalizeSave(data);
+                    };
+                    // Fallback for simple systems
+                    data.screenshot = ev.target.result;
                     await finalizeSave(data);
                 };
                 reader.readAsDataURL(fileInput.files[0]);
@@ -153,12 +142,10 @@
         async function finalizeSave(data) {
             try {
                 await addDoc(getRegCol(), data);
-                showMessage("Success! Registration Saved.", "success");
+                showMessage("Success! Details saved online.", "success");
                 document.getElementById('regForm').reset();
-            } catch (e) { 
-                showMessage("Database Error: Rules check karein!", "error");
-                console.error(e);
-            } finally {
+            } catch (e) { showMessage("Error saving data!", "error"); }
+            finally {
                 document.getElementById('submitBtn').disabled = false;
                 document.getElementById('submitBtn').innerText = "Register Now";
             }
@@ -190,9 +177,10 @@
             } catch (e) { alert("Action Failed!"); }
         };
 
-        // --- UPDATED MODAL INPUT SAVE LOGIC ---
-        window.openInputModal = (type) => {
+        // --- NEW MODAL INPUT LOGIC ---
+        window.openInputModal = (type, id = null) => {
             activeSettingType = type;
+            activeDeleteId = id;
             const modal = document.getElementById('inputModal');
             const title = document.getElementById('inputModalTitle');
             const input = document.getElementById('modalInputValue');
@@ -200,10 +188,10 @@
             input.type = "text";
             input.value = "";
             
-            if (type === 'QR') { title.innerText = "Set QR Image Link"; input.placeholder = "https://..."; input.value = scannerUrl; }
-            else if (type === 'Fee') { title.innerText = "Set Entry Fee"; input.placeholder = "e.g. 100"; input.value = entryFee; }
-            else if (type === 'Sheet') { title.innerText = "Set Google Script URL"; input.placeholder = "https://script..."; input.value = googleSheetUrl; }
-            else if (type === 'Delete') { title.innerText = "Confirm Delete"; input.placeholder = "Dashboard Password"; input.type = "password"; }
+            if (type === 'QR') { title.innerText = "Naya QR Link"; input.value = scannerUrl; }
+            else if (type === 'Fee') { title.innerText = "Entry Fee Badlein"; input.value = entryFee; }
+            else if (type === 'Sheet') { title.innerText = "Google Script Link"; input.value = googleSheetUrl; }
+            else if (type === 'Delete') { title.innerText = "Admin Password Maange"; input.type = "password"; input.placeholder = "Password Daalein"; }
 
             modal.classList.remove('hidden');
             modal.classList.add('flex');
@@ -213,34 +201,24 @@
             const val = document.getElementById('modalInputValue').value.trim();
             const modal = document.getElementById('inputModal');
             
-            if (!val && activeSettingType !== 'Delete') return alert("Khali nahi chhod sakte!");
+            if (!val) return alert("Kuch toh daalo bhai!");
 
             try {
                 if (activeSettingType === 'Delete') {
                     if (val !== adminPassword) return alert("Galat Password!");
-                    const delId = modal.dataset.delId;
-                    await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'registrations', delId));
-                    showMessage("Deleted Successfully!", "success");
+                    await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'registrations', activeDeleteId));
+                    showMessage("Entry Deleted!", "success");
                 } else {
                     let updateObj = {};
                     if (activeSettingType === 'QR') updateObj.scannerUrl = val;
                     else if (activeSettingType === 'Fee') updateObj.entryFee = val;
                     else if (activeSettingType === 'Sheet') updateObj.googleSheetUrl = val;
 
-                    // This writes to Firestore
                     await setDoc(getSettingsDoc(), updateObj, { merge: true });
-                    showMessage("Saved to Cloud!", "success");
+                    showMessage("Settings Saved!", "success");
                 }
                 modal.classList.add('hidden');
-            } catch (error) {
-                console.error("Save Error:", error);
-                alert("Permission Denied! Check Firestore Rules.");
-            }
-        };
-
-        window.deleteEntryPrompt = (id) => {
-            document.getElementById('inputModal').dataset.delId = id;
-            openInputModal('Delete');
+            } catch (error) { alert("Permission Error!"); }
         };
 
         // --- TAP TRIGGERS ---
@@ -281,7 +259,7 @@
                 document.getElementById('settingsBtnGroup').classList.remove('hidden');
                 document.getElementById('settingsBtnGroup').classList.add('flex');
                 showMessage("Settings Unlocked!", "success");
-            } else { alert("Galat Secret Password!"); }
+            } else { alert("Secret Password Galat Hai!"); }
         };
 
         window.closeAdmin = () => {
@@ -322,10 +300,10 @@
                         </span>
                     </td>
                     <td class="p-3 flex gap-1 justify-center">
-                        <button onclick="viewScreenshot('${r.id}')" class="bg-blue-600/20 text-blue-400 p-1.5 rounded active:scale-90"><i data-lucide="eye" class="w-3.5 h-3.5"></i></button>
+                        <button onclick="viewScreenshot('${r.id}')" class="bg-blue-600/20 text-blue-400 p-1.5 rounded active:scale-90 transition"><i data-lucide="eye" class="w-3.5 h-3.5"></i></button>
                         <button onclick="handleStatus('${r.id}', 'Confirmed')" class="bg-green-600 text-white p-1.5 rounded shadow-lg active:scale-90" title="Confirm"><i data-lucide="check" class="w-3.5 h-3.5"></i></button>
                         <button onclick="handleStatus('${r.id}', 'Rejected')" class="bg-red-600 text-white p-1.5 rounded active:scale-90" title="Reject"><i data-lucide="x" class="w-3.5 h-3.5"></i></button>
-                        <button onclick="deleteEntryPrompt('${r.id}')" class="bg-slate-800 text-slate-500 p-1.5 rounded hover:bg-red-900 transition active:scale-90"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
+                        <button onclick="openInputModal('Delete', '${r.id}')" class="bg-slate-800 text-slate-500 p-1.5 rounded hover:bg-red-900 active:scale-90 transition"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
                     </td>
                 </tr>
             `).join('');
@@ -335,7 +313,7 @@
         function showMessage(msg, type) {
             const t = document.getElementById('toast');
             t.innerText = msg;
-            t.className = `fixed bottom-10 right-5 p-4 rounded-xl text-white font-bold z-[250] transition-all duration-300 shadow-2xl ${type==='success'?'bg-green-600 shadow-green-900/40':'bg-red-600 shadow-red-900/40'}`;
+            t.className = `fixed bottom-10 right-5 p-4 rounded-xl text-white font-bold z-[500] transition-all duration-300 shadow-2xl ${type==='success'?'bg-green-600 shadow-green-900/40':'bg-red-600 shadow-red-900/40'}`;
             t.style.opacity = "1";
             t.style.transform = "translateY(0)";
             setTimeout(() => { t.style.opacity = "0"; t.style.transform = "translateY(20px)"; }, 3000);
@@ -392,8 +370,8 @@
                     <div class="flex flex-col items-center bg-slate-900/40 p-12 rounded-[4rem] text-center border border-slate-800 shadow-inner">
                         <h3 id="displayFee" class="text-5xl font-gaming font-black text-white mb-2 italic tracking-tighter">₹50</h3>
                         <p class="text-xs font-bold text-blue-500 uppercase mb-10 tracking-[0.3em]">Entry Fee</p>
-                        <div class="bg-white p-5 rounded-[2.5rem] shadow-2xl mb-8 group transition">
-                            <img id="mainScanner" src="https://accessible-gold-euwxs5d623.edgeone.app/AccountQRCodeNsdl%20Payments%20Bank%20Limited%20-%206448_DARK_THEME.png" alt="Scanner" class="w-48 h-48 rounded-xl object-contain group-hover:scale-105 transition">
+                        <div class="bg-white p-5 rounded-[2.5rem] shadow-2xl mb-8 group transition overflow-hidden">
+                            <img id="mainScanner" src="" alt="Scanner" class="w-48 h-48 rounded-xl object-contain group-hover:scale-105 transition duration-500">
                         </div>
                         <p id="displayFeeText" class="text-[10px] text-slate-500 uppercase font-bold tracking-widest font-gaming">Scan & Pay ₹50</p>
                     </div>
@@ -404,17 +382,18 @@
         <!-- Admin Section -->
         <div id="adminSection" class="hidden space-y-6">
             <div class="grid grid-cols-2 gap-4">
-                <div class="glass p-5 rounded-3xl text-center border border-slate-800">
+                <div class="glass p-5 rounded-3xl text-center border border-slate-800 shadow-lg">
                     <p id="totalCount" class="text-2xl font-gaming text-white">0</p>
                     <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Total Players</p>
                 </div>
-                <div class="glass p-5 rounded-3xl text-center border border-green-900/30">
+                <div class="glass p-5 rounded-3xl text-center border border-green-900/30 shadow-lg">
                     <p id="confCount" class="text-2xl font-gaming text-green-400">0</p>
                     <p class="text-[10px] text-green-500 font-bold uppercase tracking-widest">Confirmed</p>
                 </div>
             </div>
 
             <div class="flex flex-wrap justify-between items-center bg-slate-900/95 p-6 rounded-[2.5rem] border border-blue-500/20 shadow-2xl gap-4">
+                <!-- 10 TAP TRIGGER ON THIS TITLE FOR SECRET SETTINGS -->
                 <div onclick="handleSettingsTap()" class="cursor-pointer select-none p-4 hover:bg-white/5 rounded-2xl transition-all active:scale-95 group">
                     <h2 class="text-xl font-gaming font-bold text-white uppercase italic tracking-widest border-b border-dashed border-blue-500/30 pb-1 inline-block group-hover:text-blue-400">Admin Dashboard</h2>
                     <p class="text-[8px] text-slate-600 uppercase font-bold mt-1">Tap 10x for Settings</p>
@@ -435,7 +414,7 @@
                             <tr>
                                 <th class="p-5 italic text-center">S.No</th>
                                 <th class="p-5 italic">Player / Village</th>
-                                <th class="p-5 italic text-center">Details / PayName</th>
+                                <th class="p-5 italic text-center">Details / AppName</th>
                                 <th class="p-5 italic text-center">Status</th>
                                 <th class="p-5 italic text-center">Action</th>
                             </tr>
@@ -447,13 +426,41 @@
         </div>
 
         <footer class="mt-20 text-center pb-16">
+            <!-- 10 TAP TRIGGER ON THIS VERSION TEXT FOR ADMIN ACCESS -->
             <p onclick="handleVersionTap()" class="text-slate-800 text-[10px] font-bold uppercase tracking-[0.8em] cursor-pointer select-none hover:text-blue-500 transition-all duration-500 py-4 px-8 inline-block">
-                Build 1.3.6-Scanner-Fixed
+                Build 1.3.8-Ultra-Secure
             </p>
         </footer>
     </main>
 
-    <!-- Generic Input Modal -->
+    <!-- Modal: Admin Dashboard Password -->
+    <div id="loginModal" class="fixed inset-0 bg-slate-950/95 backdrop-blur-3xl z-[200] hidden items-center justify-center p-6">
+        <div class="glass w-full max-w-sm p-12 rounded-[3.5rem] text-center shadow-2xl border-blue-500/20">
+            <h3 class="text-2xl font-gaming font-black text-white mb-8 uppercase italic">Admin Access</h3>
+            <input type="password" id="adminPass" placeholder="Dashboard Pass" class="w-full bg-slate-950 border border-slate-800 p-5 rounded-[1.5rem] outline-none focus:border-blue-500 text-center mb-6 text-white font-mono text-xl tracking-[0.3em] shadow-inner">
+            <div class="flex gap-4">
+                <button onclick="checkAdminLogin()" class="flex-1 bg-blue-600 text-white font-black py-4 rounded-2xl uppercase shadow-xl active:scale-95 transition-all">Unlock</button>
+                <button onclick="document.getElementById('loginModal').classList.add('hidden')" class="flex-1 bg-slate-800 text-slate-400 font-black py-4 rounded-2xl uppercase transition-all">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Secret Settings Password -->
+    <div id="settingsLoginModal" class="fixed inset-0 bg-slate-950/98 backdrop-blur-3xl z-[210] hidden items-center justify-center p-6">
+        <div class="glass w-full max-w-sm p-12 rounded-[3.5rem] text-center shadow-2xl border-indigo-500/20">
+            <div class="w-16 h-16 bg-indigo-600/20 rounded-full flex items-center justify-center mx-auto mb-6">
+                <i data-lucide="shield-alert" class="text-indigo-500"></i>
+            </div>
+            <h3 class="text-xl font-gaming font-black text-white mb-6 uppercase">Secret Settings</h3>
+            <input type="password" id="settingsPass" placeholder="Secret Key" class="w-full bg-slate-950 border border-slate-800 p-5 rounded-[1.5rem] outline-none focus:border-indigo-500 text-center mb-6 text-white font-mono text-xl tracking-[0.3em]">
+            <div class="flex gap-4">
+                <button onclick="checkSettingsLogin()" class="flex-1 bg-indigo-600 text-white font-black py-4 rounded-2xl uppercase shadow-xl active:scale-95 transition-all">Unhide</button>
+                <button onclick="document.getElementById('settingsLoginModal').classList.add('hidden')" class="flex-1 bg-slate-800 text-slate-400 font-black py-4 rounded-2xl uppercase transition-all">Back</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Generic Input (Sheet Link, QR Link, Fee, Delete) -->
     <div id="inputModal" class="fixed inset-0 bg-slate-950/98 backdrop-blur-3xl z-[300] hidden items-center justify-center p-6">
         <div class="glass w-full max-w-md p-10 rounded-[3rem] text-center shadow-2xl border-white/5">
             <h3 id="inputModalTitle" class="text-xl font-gaming font-black text-white mb-6 uppercase tracking-wider">Update</h3>
@@ -467,34 +474,13 @@
         </div>
     </div>
 
-    <!-- Modals (Auth, Image) -->
-    <div id="loginModal" class="fixed inset-0 bg-slate-950/95 backdrop-blur-3xl z-[150] hidden items-center justify-center p-6">
-        <div class="glass w-full max-w-sm p-12 rounded-[3.5rem] text-center shadow-2xl border-blue-500/20">
-            <h3 class="text-2xl font-gaming font-black text-white mb-8 uppercase italic">Admin Access</h3>
-            <input type="password" id="adminPass" placeholder="Enter Password" class="w-full bg-slate-950 border border-slate-800 p-5 rounded-[1.5rem] outline-none focus:border-blue-500 text-center mb-6 text-white font-mono text-xl tracking-[0.3em] shadow-inner">
-            <div class="flex gap-4">
-                <button onclick="checkAdminLogin()" class="flex-1 bg-blue-600 text-white font-black py-4 rounded-2xl uppercase shadow-xl active:scale-95 transition-all">Unlock</button>
-                <button onclick="document.getElementById('loginModal').classList.add('hidden')" class="flex-1 bg-slate-800 text-slate-400 font-black py-4 rounded-2xl uppercase transition-all">Cancel</button>
-            </div>
-        </div>
-    </div>
-
-    <div id="settingsLoginModal" class="fixed inset-0 bg-slate-950/98 backdrop-blur-3xl z-[160] hidden items-center justify-center p-6">
-        <div class="glass w-full max-w-sm p-12 rounded-[3.5rem] text-center shadow-2xl border-indigo-500/20">
-            <h3 class="text-xl font-gaming font-black text-white mb-6 uppercase">Secret Settings</h3>
-            <input type="password" id="settingsPass" placeholder="Secret Key" class="w-full bg-slate-950 border border-slate-800 p-5 rounded-[1.5rem] outline-none focus:border-indigo-500 text-center mb-6 text-white font-mono text-xl tracking-[0.3em]">
-            <div class="flex gap-4">
-                <button onclick="checkSettingsLogin()" class="flex-1 bg-indigo-600 text-white font-black py-4 rounded-2xl uppercase shadow-xl active:scale-95 transition-all">Unhide</button>
-                <button onclick="document.getElementById('settingsLoginModal').classList.add('hidden')" class="flex-1 bg-slate-800 text-slate-400 font-black py-4 rounded-2xl uppercase transition-all">Back</button>
-            </div>
-        </div>
-    </div>
-
-    <div id="imageModal" class="fixed inset-0 bg-slate-950/98 z-[100] hidden items-center justify-center p-4 md:p-12 backdrop-blur-3xl">
+    <!-- Modal: Image Viewer -->
+    <div id="imageModal" class="fixed inset-0 bg-slate-950/98 z-[100] hidden items-center justify-center p-4 md:p-12 backdrop-blur-3xl text-white">
         <button onclick="document.getElementById('imageModal').classList.add('hidden')" class="absolute top-8 right-8 text-white bg-red-600 p-4 rounded-2xl shadow-2xl active:scale-90 transition"><i data-lucide="x" class="w-6 h-6"></i></button>
         <img id="modalImg" src="" alt="Screenshot" class="max-w-full max-h-[85vh] rounded-[2.5rem] shadow-2xl border border-white/10 object-contain">
     </div>
 
+    <!-- Toast Notifications -->
     <div id="toast" class="opacity-0 pointer-events-none translate-y-10 shadow-2xl"></div>
 
 </body>
